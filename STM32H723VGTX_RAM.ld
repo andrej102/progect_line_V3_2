@@ -154,6 +154,14 @@ SECTIONS
     __bss_end__ = _ebss;
   } >DTCMRAM
 
+/* D2 data section */
+  . = ALIGN(4);
+  .ram_d2 :
+  {
+    /* This is used for DMA1 and DMA2 memory burrefs */
+   *(.ram_d2*)
+  } >RAM_D2
+
   /* User_heap_stack section, used to check that there is enough RAM left */
   ._user_heap_stack :
   {

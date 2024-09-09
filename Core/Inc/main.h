@@ -140,6 +140,38 @@ void Error_Handler(void);
 
 /* USER CODE BEGIN Private defines */
 
+#define TIM17_CH1_LINE_CLK_Pin GPIO_PIN_9
+#define TIM17_CH1_LINE_CLK_GPIO_Port GPIOB
+
+#define TIM3_CH2_LIGHT_Pin GPIO_PIN_7
+#define TIM3_CH2_LIGHT_GPIO_Port GPIOA
+
+#define TIM3_CH2_LIGHT_BLUE_Pin GPIO_PIN_5
+#define TIM3_CH2_LIGHT_BLUE_GPIO_Port GPIOB
+
+#define TIM3_CH1_LINE_ST_Pin GPIO_PIN_6
+#define TIM3_CH1_LINE_ST_GPIO_Port GPIOA
+
+#define CONTAINER_DETECT_Pin GPIO_PIN_15
+#define CONTAINER_DETECT_GPIO_Port GPIOD
+
+#define OVER_COUNT_Pin GPIO_PIN_12
+#define OVER_COUNT_GPIO_Port GPIOB
+
+//-----------------------------
+
+#define NUM_PICES_FOR_EXECUTE_MIDLE 10
+
+//#define OVER_RATE_ENABLE 1
+
+#define NUM_PICES_PERIOD 4 // must equal power 2,  = 4, 8, 16, 32, 64 ...
+#define MIN_PICE_PERIOD 10
+
+//-----------------------------------------
+
+#define TRANSPARENT_OBJECT_OVERTIME 80
+#define TRANSPARENT_OBJECT_CURRENT_LINE_OVERTIME 20
+
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

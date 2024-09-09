@@ -43,7 +43,8 @@ _Min_Stack_Size = 0x400; /* required amount of stack */
 /* Specify the memory areas */
 MEMORY
 {
-  ITCMRAM (xrw)    : ORIGIN = 0x00000000,   LENGTH = 64K
+  ITCMRAM (xrw)    : ORIGIN = 0x00000000,   LENGTH = 32K
+  ITCMRAM_CODE (xrw)    : ORIGIN = 0x00008000,   LENGTH = 32K
   DTCMRAM (xrw)    : ORIGIN = 0x20000000,   LENGTH = 128K
   FLASH    (rx)    : ORIGIN = 0x08000000,   LENGTH = 1024K
   RAM_D1  (xrw)    : ORIGIN = 0x24000000,   LENGTH = 320K
@@ -154,6 +155,34 @@ SECTIONS
     _ebss = .;         /* define a global symbol at bss end */
     __bss_end__ = _ebss;
   } >RAM_D1
+
+	/* D2 data section */
+  . = ALIGN(4);
+  .ram_d2 :
+  {
+    /* This is used for DMA1 and DMA2 memory burrefs */
+   *(.ram_d2*)
+  } >RAM_D2
+
+	/* ITCMRAM data section */
+  . = ALIGN(4);
+  .ram_itcmram :
+  {
+    /* This is used for memory burrefs Scan algirithm*/
+   *(.ram_itcmram*)
+  } >ITCMRAM
+
+_siram_code = LOADADDR(.ITCMRAM_CODE);
+.ITCMRAM_CODE :
+  {
+    /* This is used for fast functions */  
+   	. = ALIGN(4);
+	_sram_code = .; /* create a global symbol at ram_code start */
+	*(.ITCMRAM_code) /* .ITCMRAM_CODE sections */
+	*(.ITCMRAM_code*) /* .ITCMRAM_CODE* sections */
+	. = ALIGN(4);
+	_eram_code = .; /* define a global symbol at ram_code end */
+  } >ITCMRAM_CODE AT> FLASH
 
   /* User_heap_stack section, used to check that there is enough RAM left */
   ._user_heap_stack :
