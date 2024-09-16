@@ -940,6 +940,23 @@ static void MX_GPIO_Init(void)
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
 	HAL_GPIO_Init(CONTAINER_DETECT_GPIO_Port, &GPIO_InitStruct);
 
+	//------------------ USART1 pins -----------------------
+
+	  /*Configure GPIO pin for U1 */
+	   GPIO_InitStruct.Pin = U1_TX_Pin;
+	   GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+	   GPIO_InitStruct.Pull = GPIO_NOPULL;
+	   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+	   GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
+	   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+	   GPIO_InitStruct.Pin = U1_RX_Pin;
+	  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+	  GPIO_InitStruct.Pull = GPIO_NOPULL;
+	  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+	  GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
+	  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
 /* USER CODE END MX_GPIO_Init_2 */
 }
 
@@ -1668,6 +1685,10 @@ void vTask_Scanner(void *pvParameters)
 	{
 		xQueueReceive(xQueue_pLines_busy, &p_line, portMAX_DELAY);
 
+		//---
+		xQueueSend(xQueue_pLines_empty, &p_line, 0);
+		continue;
+		//---
 		HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, 1);
 
 		if (xEventGroupGetBits(xEventGroup_StatusFlags_2) & Flag_2_Debug_Mode)
@@ -2599,7 +2620,7 @@ void TimersTuning(void)
 
 void UARTsTunning(void)
 {
-	USART1->BRR = 14583; 			//  140 MHz / 9600 bout
+	USART1->BRR = 14323; 			//  137.5 MHz / 9600 bout
 	USART1->CR1 = USART_CR1_UE | USART_CR1_TE | USART_CR1_RE|/* USART_CR1_FIFOEN |*/ USART_CR1_RXNEIE_RXFNEIE /*|  USART_CR1_TXFNFIE*/ /*| TCIE*/;
 
 	USART3->BRR = 152; 			//  140 MHz / 921600 bout
@@ -2756,7 +2777,7 @@ void DMA1_Stream1_IRQHandler(void)
 void USART1_IRQHandler(void)
 {
 	BaseType_t xHigherPriorityTaskWoken= pdFALSE;
-	uint8_t rx_byte = 0;
+	uint8_t rx_byte =0;
 
 	/*while(USART1->ISR & USART_ISR_RXNE_RXFNE)
 	{
