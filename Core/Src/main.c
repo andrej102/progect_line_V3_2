@@ -1685,10 +1685,10 @@ void vTask_Scanner(void *pvParameters)
 	{
 		xQueueReceive(xQueue_pLines_busy, &p_line, portMAX_DELAY);
 
-		//---
+		/*//---
 		xQueueSend(xQueue_pLines_empty, &p_line, 0);
 		continue;
-		//---
+		//---*/
 		HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, 1);
 
 		if (xEventGroupGetBits(xEventGroup_StatusFlags_2) & Flag_2_Debug_Mode)
