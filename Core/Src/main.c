@@ -267,15 +267,18 @@ char param_str[32] = {0};
 //------------ major tuning parameters of scanner ----------------------
 
 #define PROTECT_SERVICE_ENABLE 1		// protect service enable
-#define CLEAN_TEST_SERVICE_ENABLE 1		// clean test service enable
+//#define CLEAN_TEST_SERVICE_ENABLE 1		// clean test service enable
 #define OVER_AREA 1500					// global max area
 #define IDLE_STATE_TIMEOUT 1000  		// idle state timeout in seconds
+#define DEFAULT_MIN_AREA 7
 
-float k_1 = 3.0; 						// for small tablets
-float k_2 = 1.7; 						// for big tablets
+float k_0 = 3.1; //for ultra small
+float k_1 = 3.1; 						// for small tablets
+float k_2 = 1.78;						// for big tablets
+uint32_t div_11 = 70; //area separating ultra small and small
 uint32_t div_12 = 200;					// area separating small and big tablets
-uint32_t min_area = 10;					// current smallest area to be taken into account
-uint32_t max_area = 1500;				// current largest area to be taken into account without division
+uint32_t min_area = DEFAULT_MIN_AREA;					// current smallest area to be taken into account
+uint32_t max_area = OVER_AREA;				// current largest area to be taken into account without division
 
 //----------------------------------
 
@@ -463,7 +466,7 @@ int main(void)
     xTaskCreate(vTask_USART_Service,(char*)"USART Service", 1024, NULL, tskIDLE_PRIORITY + 3, &xTaskHandle_USART_Service);
 
       //xTaskCreate(vTask_UART_Line_TX,(char*)"UART Line TX", 512, NULL, tskIDLE_PRIORITY + 4, &xTaskHandle_UART_Line_TX);
-    //xTaskCreate(vTask_USB_Line_TX,(char*)"USB Line TX", 1024, NULL, tskIDLE_PRIORITY + 4, &xTaskHandle_USB_Line_TX);
+    xTaskCreate(vTask_USB_Line_TX,(char*)"USB Line TX", 1024, NULL, tskIDLE_PRIORITY + 4, &xTaskHandle_USB_Line_TX);
 
     StartScaner();
 
@@ -1680,16 +1683,12 @@ void vTask_Scanner(void *pvParameters)
 
 	uint32_t clear_tester = 0;
 
-	/* Infinite loop */
+
 	for(;;)
 	{
 		xQueueReceive(xQueue_pLines_busy, &p_line, portMAX_DELAY);
 
-		/*//---
-		xQueueSend(xQueue_pLines_empty, &p_line, 0);
-		continue;
-		//---*/
-		HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, 1);
+		HAL_GPIO_WritePin(S1_GPIO_Port, S1_Pin, 1);
 
 		if (xEventGroupGetBits(xEventGroup_StatusFlags_2) & Flag_2_Debug_Mode)
 		{
@@ -1770,57 +1769,63 @@ void vTask_Scanner(void *pvParameters)
 
 				for (j = 0; j < LINE_DIV_LENGHT; j++)
 				{
-					if((*(p_line + j) & COMP_SR_C1VAL) || (j < 8))
+					if((*(p_line + j) & COMP_SR_C1VAL) || (j < 8)) // если пиксель засвечен
 					{
-						current_line[j] = 0;
-						lastbit = 0;
+						current_line[j] = 0;					// помечаем в текущй линии его нулем (нет тени объекта)
+						lastbit = 0;							// сбрасываем флаг что фрагмент продолжается
 
 						*(p_pixel_parsel + r) &= ~( 1 << k++);
 					}
-					else
+					else										// если пиксель затемнен, то
 					{
 						*(p_pixel_parsel + r) |= ( 1 << k++);
 
-						if(!lastbit)
+						if(!lastbit)							// если фрагмент не длится, то
 						{
-							NumObjectsInCurrentLine++;
-							p_objects_current_line[NumObjectsInCurrentLine-1] = &objects_current_line[NumObjectsInCurrentLine-1];
-							p_objects_current_line[NumObjectsInCurrentLine-1]->area = 0;
+							NumObjectsInCurrentLine++;			// значит встретили новый фрагмент и увеличиваем счетчик фрагментов текущей линии
+							p_objects_current_line[NumObjectsInCurrentLine-1] = &objects_current_line[NumObjectsInCurrentLine-1]; // инициируем очередной указатель на фрагмента (назначаем указать на его свойства)
+							p_objects_current_line[NumObjectsInCurrentLine-1]->area = 0; // и обнуляем площадь фрагмента (через указатель на его свойства)
 						}
 
-						current_line[j] = NumObjectsInCurrentLine;
-						p_objects_current_line[NumObjectsInCurrentLine-1]->area++;
+						current_line[j] = NumObjectsInCurrentLine; // маркируем ячеку пикселя номером фрагмента (номер фрагмента-1 , это и номер указателя (в массиве указателей) на свойства данного фрагмента, значение которого в дальнейшем может изменится (станет указывать на свойства другого фрагмента, для объединения фрагментов))
+						p_objects_current_line[NumObjectsInCurrentLine-1]->area++; // увеличиваем площаль фрагмента на один пиксель
 						lastbit = 1;
 
-						if(last_line[j])
-						{
-							p_objects_last_line[last_line[j]-1]->cont = 1;
+						// проверяем что было в прошлой линии на данном пикселе
 
-							if (!p_objects_last_line[last_line[j]-1]->sl)
+						if(last_line[j])		//если он там тоже был фрагмент, то очевидно продолжается один объект
+						{
+							p_objects_last_line[last_line[j]-1]->cont = 1; // тогда маркируем фрагмент прошлой линии что он продолжается в текущей линии
+
+							if (!p_objects_last_line[last_line[j]-1]->sl) // если площадь текущего фрагмента прошлой линии не была добавлена к площади текущему объекту текущей линии, то
 							{
-								p_objects_last_line[last_line[j]-1]->sl = current_line[j];
-								p_objects_current_line[current_line[j]-1]->area += p_objects_last_line[last_line[j]-1]->area;
+								p_objects_current_line[current_line[j]-1]->area += p_objects_last_line[last_line[j]-1]->area; // поэтому добавляем к площади текущего фрагмента текущей линии площаль от текущего фрагмента прошлой линии
+								p_objects_last_line[last_line[j]-1]->sl = current_line[j]; // и отмечаем номером указателячто площадь данного фрагмена прошлой линии уже добавлена к текущему фрагменту текущей линии
 							}
-							else
+							else // если площадь текущего фрагмента прошлой линии уже была добавлена к текущему фрагменту текущей линии, то
 							{
-								if (p_objects_current_line[p_objects_last_line[last_line[j]-1]->sl - 1] != p_objects_current_line[current_line[j]-1])
+								if (p_objects_current_line[p_objects_last_line[last_line[j]-1]->sl - 1] != p_objects_current_line[current_line[j]-1]) // проверяем, если текущий фрагмент текущей линии не тот же, к которому была добавка площади из текущего фрагмента прошлой линии, то
 								{
+									// получается то данный фрагмент прошлой линии покрывает и текущий фрагмент текущей линии, поэтому
+									// поэтому решаем что это все один фрагмен одного объекта и
+									// прибавляем площадь текущего фрагмента текущей линии к тому фрагменту, к которому была прибовка из данного фрагмента прошлой линии
 									p_objects_current_line[p_objects_last_line[last_line[j]-1]->sl-1]->area += p_objects_current_line[current_line[j]-1]->area;
+									// а указатель текущего фрагмента текущей линии начинает указывать те же свойства фаргмента
 									p_objects_current_line[current_line[j]-1] = p_objects_current_line[p_objects_last_line[last_line[j]-1]->sl - 1];
 								}
 							}
 						}
 					}
 
-					// we analyze the connectivity of the objects of the current line with the objects of the previous line
-					// and arrange the corresponding signs (connectivity and continuation)
+					// для ускорения работы в этом же цикле переносим текущее значение ячейки линии в последню,
+					// т.к. для следующего скана текущая будет последней.
 
 					if(k == 8) {k = 0; r++;}
 
 					last_line[j] = current_line[j];
 				}
 
-				if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Mode_Transparent)
+				if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Mode_Blue)
 				{
 					// Transparent mode
 
@@ -1889,15 +1894,16 @@ void vTask_Scanner(void *pvParameters)
 							}
 
 							// check over area
-							if (p_objects_last_line[j]->area > OVER_AREA)
-							{
+
+						//	if (p_objects_last_line[j]->area > OVER_AREA)
+						//	{
 	#ifdef PROTECT_SERVICE_ENABLE
-								StopScaner();
-								xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Protect_State |  Flag_Protect_Event);
+						//		StopScaner();
+						//		xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Protect_State |  Flag_Protect_Event);
 	#endif // PROTECT_SERVICE_ENABLE
-								p_objects_last_line[j]->area = 0;
-								continue;
-							}
+						//		p_objects_last_line[j]->area = 0;
+						//		continue;
+						//	}
 
 							// check under area
 							if (p_objects_last_line[j]->area < min_area)
@@ -1932,13 +1938,13 @@ void vTask_Scanner(void *pvParameters)
 									p_objects_last_line[j]->area = 0;
 								}
 
-								/*if(numObjects)
-								{
-									if (Objects_area[numObjects] == Objects_area[numObjects - 1])
-									{
-										numObjects--;
-									}
-								}*/
+								//if(numObjects)
+								//{
+								//	if (Objects_area[numObjects] == Objects_area[numObjects - 1])
+								//	{
+								//		numObjects--;
+								//	}
+								//}
 
 								numObjects++;
 
@@ -1949,8 +1955,20 @@ void vTask_Scanner(void *pvParameters)
 									midle_area = 0;
 									for (i=0; i < NUM_PICES_FOR_EXECUTE_MIDLE; i++) midle_area += Objects_area[i];
 									midle_area /= NUM_PICES_FOR_EXECUTE_MIDLE;
-									max_area = (midle_area < div_12) ? (midle_area * k_1) : (midle_area * k_2);
-									min_area = (midle_area*15)/100;
+									//max_area = (midle_area < div_12) ? (midle_area * k_1) : (midle_area * k_2);
+									if(midle_area <= div_11)
+									{
+										max_area = midle_area * k_0;
+									}
+									else if(midle_area <= div_12)
+									{
+										max_area = midle_area * k_1;
+									}
+									else
+									{
+										max_area = midle_area * k_2;
+									}
+									min_area = (midle_area*10)/100;
 								}
 
 								if(numObjects > 1000)
@@ -1960,7 +1978,7 @@ void vTask_Scanner(void *pvParameters)
 							}
 
 		//#ifdef OVER_RATE_ENABLE
-							if ((numObjects_temp != numObjects) && (midle_area < div_12) && numObjects > NUM_PICES_FOR_EXECUTE_MIDLE)
+							if ((numObjects_temp != numObjects) && (midle_area <= div_12) && numObjects > NUM_PICES_FOR_EXECUTE_MIDLE)
 							{
 								for (p=1; p < NUM_PICES_PERIOD; p++)
 								{
@@ -1971,7 +1989,7 @@ void vTask_Scanner(void *pvParameters)
 
 								if (numObjects > (NUM_PICES_PERIOD - 1))
 								{
-									pice_period = (pices_time[NUM_PICES_PERIOD - 1] - pices_time[0]) / NUM_PICES_PERIOD;
+									pice_period = (pices_time[NUM_PICES_PERIOD - 1] - pices_time[0]) / (NUM_PICES_PERIOD - 1);
 									if (pice_period < MIN_PICE_PERIOD)
 									{
 										counter_num_extra_count++;
@@ -2004,7 +2022,7 @@ void vTask_Scanner(void *pvParameters)
 			}
 		}
 
-		HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, 0);
+		HAL_GPIO_WritePin(S1_GPIO_Port, S1_Pin, 0);
 
 		xQueueSend(xQueue_pLines_empty, &p_line, 0);
 
@@ -2647,7 +2665,7 @@ void ComparatorsTuning(void)
 void SystemInterruptsTuning(void)
 {
     NVIC_EnableIRQ(TIM3_IRQn);
-    NVIC_SetPriority(TIM3_IRQn, 10);
+    NVIC_SetPriority(TIM3_IRQn, 0);
 
     NVIC_EnableIRQ(USART1_IRQn);
     NVIC_SetPriority(USART1_IRQn, 11);

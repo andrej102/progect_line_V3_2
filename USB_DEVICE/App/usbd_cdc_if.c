@@ -23,6 +23,9 @@
 
 /* USER CODE BEGIN INCLUDE */
 
+#include "cmsis_os.h"
+#include "event_groups.h"
+
 /* USER CODE END INCLUDE */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -307,9 +310,23 @@ static int8_t CDC_TransmitCplt_HS(uint8_t *Buf, uint32_t *Len, uint8_t epnum)
 {
   uint8_t result = USBD_OK;
   /* USER CODE BEGIN 14 */
+
+  extern EventGroupHandle_t xEventGroup_StatusFlags;
+	extern const EventBits_t Flag_USB_LINE_TX_Complete;
+	BaseType_t xHigherPriorityTaskWoken, xResult;
+
+  xHigherPriorityTaskWoken = pdFALSE;
+
   UNUSED(Buf);
   UNUSED(Len);
   UNUSED(epnum);
+
+  xResult = xEventGroupSetBitsFromISR(xEventGroup_StatusFlags, Flag_USB_LINE_TX_Complete, &xHigherPriorityTaskWoken);
+
+  if( xResult != pdFAIL )
+  {
+	portYIELD_FROM_ISR( xHigherPriorityTaskWoken );
+  }
   /* USER CODE END 14 */
   return result;
 }
