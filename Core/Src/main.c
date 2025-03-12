@@ -245,12 +245,15 @@ const EventBits_t Flag_Scaner_Dirty_Event	 =		0x00800000;
 
 EventGroupHandle_t xEventGroup_StatusFlags_2;
 
-const EventBits_t Flag_2_Need_Stop_Scaner	 =			0x00000001;
+const EventBits_t Flag_2_Need_Stop_Scaner	 =		0x00000001;
 const EventBits_t Flag_2_Envent_Mode = 				0x00000002;
-const EventBits_t Flag_2_Envent_Mode_Press =			0x00000004;
+const EventBits_t Flag_2_Envent_Mode_Press =		0x00000004;
 const EventBits_t Flag_2_Envent_Mode_Unpress =		0x00000008;
 const EventBits_t Flag_2_Need_Mode_Event  =			0x00000010;
 const EventBits_t Flag_2_Debug_Mode = 				0x00000020;
+const EventBits_t Flag_Idle_WakeUP  = 				0x00000040;
+const EventBits_t Flag_Idle_WakeUP_Event_Start  = 	0x00000080;
+const EventBits_t Flag_Idle_WakeUP_Event_End  = 	0x00000100;
 
 EventGroupHandle_t xEventGroup_ChangeScreenFlags;
 
@@ -299,9 +302,9 @@ uint32_t pixel_parsel_counter = 0;
 
 uint32_t start_time =0;
 
-#define INIT_DUMMY_SCAN_COUNTER_VALUE 		100
 #define INIT_CLEAR_TEST_SCAN_COUNTER_VALUE 	100
 
+#define INIT_DUMMY_SCAN_COUNTER_VALUE 		100
 uint32_t dummy_scan_counter = INIT_DUMMY_SCAN_COUNTER_VALUE;
 uint32_t clean_test_scan_counter = INIT_CLEAR_TEST_SCAN_COUNTER_VALUE;
 
@@ -454,7 +457,7 @@ int main(void)
     memset(data_tx_buffer, 0, sizeof(data_tx_buffer));
     memset(uart_rx_buffer, 0, sizeof(uart_rx_buffer));
 
-    active_page = 0;
+    active_page = 2;
 
     // create tasks
 
@@ -468,7 +471,7 @@ int main(void)
       //xTaskCreate(vTask_UART_Line_TX,(char*)"UART Line TX", 512, NULL, tskIDLE_PRIORITY + 4, &xTaskHandle_UART_Line_TX);
     xTaskCreate(vTask_USB_Line_TX,(char*)"USB Line TX", 1024, NULL, tskIDLE_PRIORITY + 4, &xTaskHandle_USB_Line_TX);
 
-    StartScaner();
+
 
   /* USER CODE END RTOS_THREADS */
 
@@ -479,6 +482,9 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+
+  StartScaner();
+
   while (1)
   {
     /* USER CODE END WHILE */
@@ -973,10 +979,16 @@ void vTask_Main(void *pvParameters)
 {
 	uint32_t idle_timer=0;
 	uint32_t previousTickCount = xTaskGetTickCount();
+	uint32_t Idle_WakeUp_EventTickCount = 0;
 
 	while(1)
 	{
 		// check activity flag
+
+		if ((xEventGroupGetBits(xEventGroup_StatusFlags_2) & Flag_Idle_WakeUP) && (Idle_WakeUp_EventTickCount == 0))
+		{
+			Idle_WakeUp_EventTickCount = xTaskGetTickCount();
+		}
 
 		if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Activity_Detect)
 		{
@@ -1011,14 +1023,24 @@ void vTask_Main(void *pvParameters)
 				idle_timer++;
 			}
 
-			if ((idle_timer >= IDLE_STATE_TIMEOUT) && (!(xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Idle_State)))
+			if ((idle_timer >= 30/*IDLE_STATE_TIMEOUT*/) && (!(xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Idle_State)))
 			{
 				StopScaner();
 				xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Idle_State | Flag_Idle_Event);
 			}
 		}
 
-		vTaskDelay(1000);
+		if (xEventGroupGetBits(xEventGroup_StatusFlags_2) & Flag_Idle_WakeUP)
+		{
+			if ((xTaskGetTickCount() - Idle_WakeUp_EventTickCount) >= 3000)
+			{
+				xEventGroupClearBits(xEventGroup_StatusFlags_2,  Flag_Idle_WakeUP);
+				Idle_WakeUp_EventTickCount = 0;
+				xEventGroupSetBits(xEventGroup_StatusFlags_2,  Flag_Idle_WakeUP_Event_End);
+			}
+		}
+
+		vTaskDelay(100);
 	}
 }
 
@@ -1033,7 +1055,14 @@ void vTask_Display(void *pvParameters)
 	static uint32_t timer_over_count_signal_display = 0;
 	static uint32_t timer_counter_flashing_display = 0;
 
-	vTaskDelay(2000);
+	vTaskDelay(1000);
+
+	active_page = 2;
+	tft_show_page(2);
+	vTaskDelay(4000);
+
+	tft_show_page(0);
+	vTaskDelay(1000);
 
 	for(;;)
 	{
@@ -1079,6 +1108,18 @@ void vTask_Display(void *pvParameters)
 				xEventGroupClearBits(xEventGroup_StatusFlags, Flag_Scaner_Dirty_Event);
 				tft_show_message(3); // Not Clear
 			}
+
+			else if (xEventGroupGetBits(xEventGroup_StatusFlags_2) & Flag_Idle_WakeUP_Event_Start)
+			{
+				xEventGroupClearBits(xEventGroup_StatusFlags_2, Flag_Idle_WakeUP_Event_Start);
+				tft_show_message(6); // Check the tray
+			}
+			else if (xEventGroupGetBits(xEventGroup_StatusFlags_2) & Flag_Idle_WakeUP_Event_End)
+			{
+				xEventGroupClearBits(xEventGroup_StatusFlags_2, Flag_Idle_WakeUP_Event_End);
+				tft_show_message(5); // Clear Msg Line
+			}
+
 			else if (xEventGroupGetBits(xEventGroup_StatusFlags_2) & Flag_2_Need_Mode_Event)
 			{
 				xEventGroupClearBits(xEventGroup_StatusFlags_2, Flag_2_Need_Mode_Event);
@@ -1377,41 +1418,41 @@ void service_page_1(uint8_t but, uint8_t val)
 		  {
 			  xEventGroupSetBits(xEventGroup_StatusFlags, Flag_Mode_Blue);
 
-			  COMP1->CFGR |= COMP_CFGRx_INMSEL_0; // PC4 -
+			/*  COMP1->CFGR |= COMP_CFGRx_INMSEL_0; // PC4 -
 
-			  /*Configure GPIO pin : TIM3_CH2_LIGTH_Pin */
+			  //Configure GPIO pin : TIM3_CH2_LIGTH_Pin
 				GPIO_InitStruct.Pin = TIM3_CH2_LIGHT_Pin;
 				GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
 				GPIO_InitStruct.Pull = GPIO_NOPULL;
 				HAL_GPIO_Init(TIM3_CH2_LIGHT_GPIO_Port, &GPIO_InitStruct);
 				HAL_GPIO_WritePin(TIM3_CH2_LIGHT_GPIO_Port, TIM3_CH2_LIGHT_Pin, 0);
 
-				 /*Configure GPIO pin : TIM3_CH2_LIGTH_BLUE_Pin */
+				 //Configure GPIO pin : TIM3_CH2_LIGTH_BLUE_Pin
 				GPIO_InitStruct.Pin = TIM3_CH2_LIGHT_BLUE_Pin;
 				GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
 				GPIO_InitStruct.Pull = GPIO_NOPULL;
 				GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
 				GPIO_InitStruct.Alternate = GPIO_AF2_TIM3;
-				HAL_GPIO_Init(TIM3_CH2_LIGHT_BLUE_GPIO_Port, &GPIO_InitStruct);
+				HAL_GPIO_Init(TIM3_CH2_LIGHT_BLUE_GPIO_Port, &GPIO_InitStruct);*/
 		  }
 		  else if (!val)
 		  {
-			  COMP1->CFGR &= ~COMP_CFGRx_INMSEL_0; // PB1 -
+			  /*COMP1->CFGR &= ~COMP_CFGRx_INMSEL_0; // PB1 -
 
-			  /*Configure GPIO pin : TIM3_CH2_LIGTH_BLUE_Pin */
+			  /.Configure GPIO pin : TIM3_CH2_LIGTH_BLUE_Pin
 				 GPIO_InitStruct.Pin = TIM3_CH2_LIGHT_BLUE_Pin;
 				 GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
 				 GPIO_InitStruct.Pull = GPIO_NOPULL;
 				 HAL_GPIO_Init(TIM3_CH2_LIGHT_BLUE_GPIO_Port, &GPIO_InitStruct);
 				 HAL_GPIO_WritePin(TIM3_CH2_LIGHT_BLUE_GPIO_Port, TIM3_CH2_LIGHT_BLUE_Pin, 0);
 
-				 /*Configure GPIO pin : TIM3_CH2_LIGTH_Pin */
+				 /.Configure GPIO pin : TIM3_CH2_LIGTH_Pin
 				GPIO_InitStruct.Pin = TIM3_CH2_LIGHT_Pin;
 				GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
 				GPIO_InitStruct.Pull = GPIO_NOPULL;
 				GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
 				GPIO_InitStruct.Alternate = GPIO_AF2_TIM3;
-				HAL_GPIO_Init(TIM3_CH2_LIGHT_GPIO_Port, &GPIO_InitStruct);
+				HAL_GPIO_Init(TIM3_CH2_LIGHT_GPIO_Port, &GPIO_InitStruct);*/
 
 				xEventGroupClearBits(xEventGroup_StatusFlags, Flag_Mode_Blue);
 		  }
@@ -1467,7 +1508,7 @@ void service_page_0(uint8_t but, uint8_t val)
 				{
 					xEventGroupSetBits(xEventGroup_StatusFlags, Flag_Mode_Blue);
 
-					COMP1->CFGR |= COMP_CFGRx_INMSEL_0; // PC4 -
+				/*	COMP1->CFGR |= COMP_CFGRx_INMSEL_0; // PC4 -
 
 					//Configure GPIO pin : TIM3_CH2_LIGTH_Pin
 					GPIO_InitStruct.Pin = TIM3_CH2_LIGHT_Pin;
@@ -1482,11 +1523,11 @@ void service_page_0(uint8_t but, uint8_t val)
 					GPIO_InitStruct.Pull = GPIO_NOPULL;
 					GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
 					GPIO_InitStruct.Alternate = GPIO_AF2_TIM3;
-					HAL_GPIO_Init(TIM3_CH2_LIGHT_BLUE_GPIO_Port, &GPIO_InitStruct);
+					HAL_GPIO_Init(TIM3_CH2_LIGHT_BLUE_GPIO_Port, &GPIO_InitStruct);*/
 				}
 				else if (!val)
 				{
-					COMP1->CFGR &= ~COMP_CFGRx_INMSEL_0; // PB1 -
+				/*	COMP1->CFGR &= ~COMP_CFGRx_INMSEL_0; // PB1 -
 
 					  //Configure GPIO pin : TIM3_CH2_LIGTH_BLUE_Pin
 					GPIO_InitStruct.Pin = TIM3_CH2_LIGHT_BLUE_Pin;
@@ -1501,7 +1542,7 @@ void service_page_0(uint8_t but, uint8_t val)
 					GPIO_InitStruct.Pull = GPIO_NOPULL;
 					GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
 					GPIO_InitStruct.Alternate = GPIO_AF2_TIM3;
-					HAL_GPIO_Init(TIM3_CH2_LIGHT_GPIO_Port, &GPIO_InitStruct);
+					HAL_GPIO_Init(TIM3_CH2_LIGHT_GPIO_Port, &GPIO_InitStruct);*/
 
 					xEventGroupClearBits(xEventGroup_StatusFlags, Flag_Mode_Blue);
 				 }
@@ -1599,6 +1640,10 @@ void vTask_TouchScreen(void *pvParameters)
 				  {
 					  active_page = 1;
 				  }
+				  else if (uart_rx_buffer[1] == 0x02)
+				  {
+					  active_page = 2;
+				  }
 			  }
 		}
 
@@ -1647,6 +1692,12 @@ void vTask_ContainerDetect(void *pvParameters)
 		  {
 			  if(!event_state)
 			  {
+				  if(xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Idle_State)
+				  {
+					  xEventGroupSetBits(xEventGroup_StatusFlags_2,  Flag_Idle_WakeUP | Flag_Idle_WakeUP_Event_Start);
+				  }
+
+
 				  xEventGroupSetBits(xEventGroup_StatusFlags, Flag_Container_Removed);
 				  StopScaner();
 				  event_state = 1;
@@ -1968,7 +2019,7 @@ void vTask_Scanner(void *pvParameters)
 									{
 										max_area = midle_area * k_2;
 									}
-									min_area = (midle_area*10)/100;
+									min_area = (midle_area*5)/100;
 								}
 
 								if(numObjects > 1000)
@@ -2229,7 +2280,25 @@ void tft_show_message(uint8_t msg)
 		}
 	}
 
-	if (msg < 6)
+	if (msg == 6)
+	{
+		protect_counter = HAL_GetTick();
+
+		while ((xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_USART_TX) && ((HAL_GetTick() - protect_counter) < 1000))
+		{
+			vTaskDelay(10);
+		}
+
+		sprintf((char*)data_tx_buffer, "page%u.wav1.en=1", active_page);
+		num_data_tx = strlen((char*)data_tx_buffer);
+		data_tx_buffer[num_data_tx++] = 0xff;
+		data_tx_buffer[num_data_tx++] = 0xff;
+		data_tx_buffer[num_data_tx++] = 0xff;
+
+		xEventGroupSetBits(xEventGroup_StatusFlags, Flag_USART_TX);
+	}
+
+	if (msg < 7)
 	{
 		protect_counter = HAL_GetTick();
 
@@ -2258,8 +2327,11 @@ void tft_show_message(uint8_t msg)
 				case 4 : // Dirty
 					sprintf((char*)data_tx_buffer, "page%u.t4.txt=\"Inventory\"", active_page);
 					break;
-				case 5 : // Dirty
+				case 5 : // Clear Msg Line
 					sprintf((char*)data_tx_buffer, "page%u.t4.txt=\" \"", active_page);
+					break;
+				case 6 : // Check the tray
+					sprintf((char*)data_tx_buffer, "page%u.t4.txt=\"Check The Tray\"", active_page);
 					break;
 			}
 
