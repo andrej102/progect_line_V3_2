@@ -272,7 +272,7 @@ char param_str[32] = {0};
 #define PROTECT_SERVICE_ENABLE 1		// protect service enable
 //#define CLEAN_TEST_SERVICE_ENABLE 1		// clean test service enable
 #define OVER_AREA 1500					// global max area
-#define IDLE_STATE_TIMEOUT 1000  		// idle state timeout in seconds
+#define IDLE_STATE_TIMEOUT 1200  		// idle state timeout in seconds
 #define DEFAULT_MIN_AREA 7
 
 float k_0 = 3.1; //for ultra small
@@ -1023,7 +1023,7 @@ void vTask_Main(void *pvParameters)
 				idle_timer++;
 			}
 
-			if ((idle_timer >= 30/*IDLE_STATE_TIMEOUT*/) && (!(xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Idle_State)))
+			if ((idle_timer >= IDLE_STATE_TIMEOUT) && (!(xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Idle_State)))
 			{
 				StopScaner();
 				xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Idle_State | Flag_Idle_Event);
