@@ -135,6 +135,8 @@ uint32_t NumObjectsInLastLine = 0;
 line_object_t objects_last_line[LINE_DIV_LENGHT];
 line_object_t *p_objects_last_line[LINE_DIV_LENGHT];
 
+uint32_t last_line_shadow[LINE_DIV_LENGHT];
+
 uint32_t counter_num_extra_count = 0;
 
 uint32_t numObjects = 0;
@@ -1006,6 +1008,8 @@ void vTask_Main(void *pvParameters)
 				memset(current_line, 0, sizeof(current_line));
 				memset(objects_last_line, 0, sizeof(objects_last_line));
 
+				memset(last_line_shadow, 0, sizeof(last_line_shadow));
+
 				if (!(xEventGroupGetBits(xEventGroup_StatusFlags_2) & Flag_2_Envent_Mode))
 				{
 				  Clear_Counter();
@@ -1418,7 +1422,7 @@ void service_page_1(uint8_t but, uint8_t val)
 		  {
 			  xEventGroupSetBits(xEventGroup_StatusFlags, Flag_Mode_Blue);
 
-			/*  COMP1->CFGR |= COMP_CFGRx_INMSEL_0; // PC4 -
+			  COMP1->CFGR |= COMP_CFGRx_INMSEL_0; // PC4 -
 
 			  //Configure GPIO pin : TIM3_CH2_LIGTH_Pin
 				GPIO_InitStruct.Pin = TIM3_CH2_LIGHT_Pin;
@@ -1433,26 +1437,26 @@ void service_page_1(uint8_t but, uint8_t val)
 				GPIO_InitStruct.Pull = GPIO_NOPULL;
 				GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
 				GPIO_InitStruct.Alternate = GPIO_AF2_TIM3;
-				HAL_GPIO_Init(TIM3_CH2_LIGHT_BLUE_GPIO_Port, &GPIO_InitStruct);*/
+				HAL_GPIO_Init(TIM3_CH2_LIGHT_BLUE_GPIO_Port, &GPIO_InitStruct);
 		  }
 		  else if (!val)
 		  {
-			  /*COMP1->CFGR &= ~COMP_CFGRx_INMSEL_0; // PB1 -
+			  COMP1->CFGR &= ~COMP_CFGRx_INMSEL_0; // PB1 -
 
-			  /.Configure GPIO pin : TIM3_CH2_LIGTH_BLUE_Pin
+			  //Configure GPIO pin : TIM3_CH2_LIGTH_BLUE_Pin
 				 GPIO_InitStruct.Pin = TIM3_CH2_LIGHT_BLUE_Pin;
 				 GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
 				 GPIO_InitStruct.Pull = GPIO_NOPULL;
 				 HAL_GPIO_Init(TIM3_CH2_LIGHT_BLUE_GPIO_Port, &GPIO_InitStruct);
 				 HAL_GPIO_WritePin(TIM3_CH2_LIGHT_BLUE_GPIO_Port, TIM3_CH2_LIGHT_BLUE_Pin, 0);
 
-				 /.Configure GPIO pin : TIM3_CH2_LIGTH_Pin
+				 //Configure GPIO pin : TIM3_CH2_LIGTH_Pin
 				GPIO_InitStruct.Pin = TIM3_CH2_LIGHT_Pin;
 				GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
 				GPIO_InitStruct.Pull = GPIO_NOPULL;
 				GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
 				GPIO_InitStruct.Alternate = GPIO_AF2_TIM3;
-				HAL_GPIO_Init(TIM3_CH2_LIGHT_GPIO_Port, &GPIO_InitStruct);*/
+				HAL_GPIO_Init(TIM3_CH2_LIGHT_GPIO_Port, &GPIO_InitStruct);
 
 				xEventGroupClearBits(xEventGroup_StatusFlags, Flag_Mode_Blue);
 		  }
@@ -1508,7 +1512,7 @@ void service_page_0(uint8_t but, uint8_t val)
 				{
 					xEventGroupSetBits(xEventGroup_StatusFlags, Flag_Mode_Blue);
 
-				/*	COMP1->CFGR |= COMP_CFGRx_INMSEL_0; // PC4 -
+					COMP1->CFGR |= COMP_CFGRx_INMSEL_0; // PC4 -
 
 					//Configure GPIO pin : TIM3_CH2_LIGTH_Pin
 					GPIO_InitStruct.Pin = TIM3_CH2_LIGHT_Pin;
@@ -1523,11 +1527,11 @@ void service_page_0(uint8_t but, uint8_t val)
 					GPIO_InitStruct.Pull = GPIO_NOPULL;
 					GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
 					GPIO_InitStruct.Alternate = GPIO_AF2_TIM3;
-					HAL_GPIO_Init(TIM3_CH2_LIGHT_BLUE_GPIO_Port, &GPIO_InitStruct);*/
+					HAL_GPIO_Init(TIM3_CH2_LIGHT_BLUE_GPIO_Port, &GPIO_InitStruct);
 				}
 				else if (!val)
 				{
-				/*	COMP1->CFGR &= ~COMP_CFGRx_INMSEL_0; // PB1 -
+					COMP1->CFGR &= ~COMP_CFGRx_INMSEL_0; // PB1 -
 
 					  //Configure GPIO pin : TIM3_CH2_LIGTH_BLUE_Pin
 					GPIO_InitStruct.Pin = TIM3_CH2_LIGHT_BLUE_Pin;
@@ -1542,7 +1546,7 @@ void service_page_0(uint8_t but, uint8_t val)
 					GPIO_InitStruct.Pull = GPIO_NOPULL;
 					GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
 					GPIO_InitStruct.Alternate = GPIO_AF2_TIM3;
-					HAL_GPIO_Init(TIM3_CH2_LIGHT_GPIO_Port, &GPIO_InitStruct);*/
+					HAL_GPIO_Init(TIM3_CH2_LIGHT_GPIO_Port, &GPIO_InitStruct);
 
 					xEventGroupClearBits(xEventGroup_StatusFlags, Flag_Mode_Blue);
 				 }
@@ -1721,6 +1725,7 @@ void vTask_ContainerDetect(void *pvParameters)
  *
  */
 
+/*
 void vTask_Scanner(void *pvParameters)
 {
 	uint32_t j, p, i;
@@ -2091,7 +2096,369 @@ void vTask_Scanner(void *pvParameters)
   }
 
 }
+*/
 
+void vTask_Scanner(void *pvParameters)
+{
+	uint32_t j, p, i;
+	uint32_t lastbit = 0;
+	uint32_t numObjects_temp =0;
+	uint32_t transparent_object_start = 0;
+	uint32_t transparent_object_overtime = 0;
+	uint32_t transparent_object_current_line_overtime = 0;
+	uint32_t r = 0, k = 0;
+	uint32_t *p_line = NULL;
+
+	uint32_t clear_tester = 0;
+
+
+	for(;;)
+	{
+		xQueueReceive(xQueue_pLines_busy, &p_line, portMAX_DELAY);
+
+		HAL_GPIO_WritePin(S1_GPIO_Port, S1_Pin, 1);
+
+		if (xEventGroupGetBits(xEventGroup_StatusFlags_2) & Flag_2_Debug_Mode)
+		{
+			dummy_scan_counter = INIT_DUMMY_SCAN_COUNTER_VALUE;
+			if(!(xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Container_Removed))
+			{
+				xEventGroupSetBits(xEventGroup_StatusFlags, Flag_Activity_Detect);
+			}
+		}
+
+		if (xQueueReceive(xQueue_pLines_empty_usb, &p_pixel_parsel, 0) != pdTRUE)
+		{
+			p_pixel_parsel = temp_pixel_parsel;
+		}
+
+#ifndef CLEAN_TEST_SERVICE_ENABLE
+		clean_test_scan_counter =0;
+#endif		// CLEAN_TEST_SERVICE_ENABLE
+
+		if(dummy_scan_counter) // dummy scans for normal start line
+		{
+			if(dummy_scan_counter == INIT_DUMMY_SCAN_COUNTER_VALUE)
+			{
+				memset((uint8_t*)last_line, 0, sizeof(last_line));
+			}
+
+			dummy_scan_counter--;
+
+			k = 0; r = 8;
+
+			for (j = 0; j < LINE_DIV_LENGHT; j++)
+			{
+				*(p_pixel_parsel + r) &= ~( 1 << k++);
+
+				if(k == 8)
+				{
+					k = 0;
+					r++;
+				}
+			}
+		}
+		else // active dummy scans
+		{
+			if(clean_test_scan_counter)
+			{
+				if(clean_test_scan_counter == INIT_CLEAR_TEST_SCAN_COUNTER_VALUE) //initial zeros clean line test
+				{
+					memset((uint8_t*)clean_test_lines_buffer, 0, sizeof(clean_test_lines_buffer));
+					memset((uint8_t*)last_line, 0, sizeof(last_line));
+				}
+
+				clean_test_scan_counter--;
+
+				clear_tester = 0;
+
+				for (j = 0; j < LINE_DIV_LENGHT; j++)
+				{
+					if((*(p_line + j) & COMP_SR_C1VAL) || (j < 8))
+					{
+						*(p_pixel_parsel + r) &= ~( 1 << k++);
+					}
+					else
+					{
+						*(p_pixel_parsel + r) |= ( 1 << k++);
+
+						StopScaner();
+						xEventGroupSetBits(xEventGroup_StatusFlags, Flag_Scaner_Dirty | Flag_Scaner_Dirty_Event);
+						break;
+					}
+				}
+			}
+			else
+			{
+				/*if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Mode_Blue)
+				{
+					// Transparent mode
+
+					int ej = 1000;
+
+					for (j = 0; j < LINE_DIV_LENGHT; j++)
+					{
+						if(!(*(p_line + j) & COMP_SR_C1VAL))
+						{
+							if(j > (ej+1))
+							{
+								for(int n=(ej+1); n < j; n++)
+								{
+									*(p_line + n) &= ~COMP_SR_C1VAL;
+									last_line_shadow[n] = 10;
+								}
+							}
+
+							last_line_shadow[j] = 10;
+							ej=j;
+						}
+						else if ((last_line[j]) && (last_line_shadow[j]))
+						{
+							*(p_line + j) &= ~COMP_SR_C1VAL;
+							last_line_shadow[j]--;
+						}
+					}
+				}*/
+
+				NumObjectsInCurrentLine = 0;
+				lastbit = 0;
+				k = 0;
+				r = 8;
+
+				for (j = 0; j < LINE_DIV_LENGHT; j++)
+				{
+					if((*(p_line + j) & COMP_SR_C1VAL) || (j < 8)) // если пиксель засвечен
+					{
+						current_line[j] = 0;					// помечаем в текущй линии его нулем (нет тени объекта)
+						lastbit = 0;							// сбрасываем флаг что фрагмент продолжается
+
+						*(p_pixel_parsel + r) &= ~( 1 << k++);
+					}
+					else										// если пиксель затемнен, то
+					{
+						*(p_pixel_parsel + r) |= ( 1 << k++);
+
+						if(!lastbit)							// если фрагмент не длится, то
+						{
+							NumObjectsInCurrentLine++;			// значит встретили новый фрагмент и увеличиваем счетчик фрагментов текущей линии
+							p_objects_current_line[NumObjectsInCurrentLine-1] = &objects_current_line[NumObjectsInCurrentLine-1]; // инициируем очередной указатель на фрагмента (назначаем указать на его свойства)
+							p_objects_current_line[NumObjectsInCurrentLine-1]->area = 0; // и обнуляем площадь фрагмента (через указатель на его свойства)
+						}
+
+						current_line[j] = NumObjectsInCurrentLine; // маркируем ячеку пикселя номером фрагмента (номер фрагмента-1 , это и номер указателя (в массиве указателей) на свойства данного фрагмента, значение которого в дальнейшем может изменится (станет указывать на свойства другого фрагмента, для объединения фрагментов))
+						p_objects_current_line[NumObjectsInCurrentLine-1]->area++; // увеличиваем площаль фрагмента на один пиксель
+						lastbit = 1;
+
+						// проверяем что было в прошлой линии на данном пикселе
+
+						if(last_line[j])		//если он там тоже был фрагмент, то очевидно продолжается один объект
+						{
+							p_objects_last_line[last_line[j]-1]->cont = 1; // тогда маркируем фрагмент прошлой линии что он продолжается в текущей линии
+
+							if (!p_objects_last_line[last_line[j]-1]->sl) // если площадь текущего фрагмента прошлой линии не была добавлена к площади текущему объекту текущей линии, то
+							{
+								p_objects_current_line[current_line[j]-1]->area += p_objects_last_line[last_line[j]-1]->area; // поэтому добавляем к площади текущего фрагмента текущей линии площаль от текущего фрагмента прошлой линии
+								p_objects_last_line[last_line[j]-1]->sl = current_line[j]; // и отмечаем номером указателячто площадь данного фрагмена прошлой линии уже добавлена к текущему фрагменту текущей линии
+							}
+							else // если площадь текущего фрагмента прошлой линии уже была добавлена к текущему фрагменту текущей линии, то
+							{
+								if (p_objects_current_line[p_objects_last_line[last_line[j]-1]->sl - 1] != p_objects_current_line[current_line[j]-1]) // проверяем, если текущий фрагмент текущей линии не тот же, к которому была добавка площади из текущего фрагмента прошлой линии, то
+								{
+									// получается то данный фрагмент прошлой линии покрывает и текущий фрагмент текущей линии, поэтому
+									// поэтому решаем что это все один фрагмен одного объекта и
+									// прибавляем площадь текущего фрагмента текущей линии к тому фрагменту, к которому была прибовка из данного фрагмента прошлой линии
+									p_objects_current_line[p_objects_last_line[last_line[j]-1]->sl-1]->area += p_objects_current_line[current_line[j]-1]->area;
+									// а указатель текущего фрагмента текущей линии начинает указывать те же свойства фаргмента
+									p_objects_current_line[current_line[j]-1] = p_objects_current_line[p_objects_last_line[last_line[j]-1]->sl - 1];
+								}
+							}
+						}
+					}
+
+					// для ускорения работы в этом же цикле переносим текущее значение ячейки линии в последню,
+					// т.к. для следующего скана текущая будет последней.
+
+					if(k == 8) {k = 0; r++;}
+
+					last_line[j] = current_line[j];
+				}
+
+				// check if there are completed objects on the previous line
+
+				line_object_t * previous_p_objects_last_line = NULL;
+
+				for (j=0; j < NumObjectsInLastLine; j++)
+				{
+					// check over area
+					if (p_objects_last_line[j]->area > 5000/*OVER_AREA*/)
+					{
+#ifdef PROTECT_SERVICE_ENABLE
+						StopScaner();
+						xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Protect_State |  Flag_Protect_Event);
+#endif // PROTECT_SERVICE_ENABLE
+						p_objects_last_line[j]->area = 0;
+						continue;
+					}
+
+					if (!p_objects_last_line[j]->cont)
+					{
+						if (p_objects_last_line[j] == previous_p_objects_last_line)
+						{
+							continue;
+						}
+						else
+						{
+							previous_p_objects_last_line = p_objects_last_line[j];
+						}
+
+						// check over area
+
+					//	if (p_objects_last_line[j]->area > OVER_AREA)
+					//	{
+#ifdef PROTECT_SERVICE_ENABLE
+					//		StopScaner();
+					//		xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Protect_State |  Flag_Protect_Event);
+#endif // PROTECT_SERVICE_ENABLE
+					//		p_objects_last_line[j]->area = 0;
+					//		continue;
+					//	}
+
+						// check under area
+						if (p_objects_last_line[j]->area < min_area)
+						{
+							p_objects_last_line[j]->area = 0;
+							continue;
+						}
+						numObjects_temp = numObjects;
+
+						/*if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Mode_Blue)
+						{
+							Objects_area[numObjects] = p_objects_last_line[j]->area;
+							p_objects_last_line[j]->area = 0;
+
+							numObjects++;
+
+							xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Activity_Detect);
+
+							if(numObjects > 1000) numObjects = 0;
+						}
+						else
+						{*/
+							while (p_objects_last_line[j]->area)
+							{
+								if (p_objects_last_line[j]->area > max_area)
+								{
+									//if (midle_area >= div_12)
+									//{
+
+		#ifndef OVER_RATE_ENABLE
+										xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Over_Count | Flag_Over_Count_Display);
+		#endif //OVER_RATE_ENABLE
+										Objects_area[numObjects] = max_area;
+										p_objects_last_line[j]->area -= max_area;
+									//}
+									//else
+									//{
+									//	Objects_area[numObjects] = p_objects_last_line[j]->area;
+									//	p_objects_last_line[j]->area = 0;
+									//}
+								}
+								else
+								{
+									Objects_area[numObjects] = p_objects_last_line[j]->area;
+									p_objects_last_line[j]->area = 0;
+								}
+
+								//if(numObjects)
+								//{
+								//	if (Objects_area[numObjects] == Objects_area[numObjects - 1])
+								//	{
+								//		numObjects--;
+								//	}
+								//}
+
+								numObjects++;
+
+								xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Activity_Detect);
+
+								if (numObjects == NUM_PICES_FOR_EXECUTE_MIDLE)
+								{
+									midle_area = 0;
+									for (i=0; i < NUM_PICES_FOR_EXECUTE_MIDLE; i++) midle_area += Objects_area[i];
+									midle_area /= NUM_PICES_FOR_EXECUTE_MIDLE;
+									//max_area = (midle_area < div_12) ? (midle_area * k_1) : (midle_area * k_2);
+									if(midle_area <= div_11) max_area = midle_area * k_0;
+									else if(midle_area <= div_12) max_area = midle_area * k_1;
+									else max_area = midle_area * k_2;
+									min_area = (midle_area*5)/100;
+								}
+
+								if(numObjects > 1000) numObjects = 0;
+							}
+
+		//#ifdef OVER_RATE_ENABLE
+							if ((numObjects_temp != numObjects) && (midle_area <= div_12) && numObjects > NUM_PICES_FOR_EXECUTE_MIDLE)
+							{
+								for (p=1; p < NUM_PICES_PERIOD; p++)
+								{
+									pices_time[p-1] = pices_time[p];
+								}
+
+								pices_time[NUM_PICES_PERIOD - 1]  = HAL_GetTick();
+
+								if (numObjects > (NUM_PICES_PERIOD - 1))
+								{
+									pice_period = (pices_time[NUM_PICES_PERIOD - 1] - pices_time[0]) / (NUM_PICES_PERIOD - 1);
+									if (pice_period < MIN_PICE_PERIOD)
+									{
+										counter_num_extra_count++;
+										xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Over_Count | Flag_Over_Count_Display);
+
+										for (p=0; p < NUM_PICES_PERIOD; p++)
+										{
+											pices_time[p] = 0;
+										}
+									}
+								}
+							}
+	//#endif // OVER_RATE_ENABLE
+						//}
+					}
+				}
+
+				// transfer objects of current line to last line
+
+				for (j=0; j < NumObjectsInCurrentLine; j++)
+				{
+					p_objects_last_line[j] = &objects_last_line[0] + (p_objects_current_line[j] - &objects_current_line[0]);
+
+					p_objects_last_line[j]->area = p_objects_current_line[j]->area;
+					p_objects_last_line[j]->cont = 0;
+					p_objects_last_line[j]->sl = 0;
+				}
+
+				NumObjectsInLastLine = NumObjectsInCurrentLine;
+			}
+		}
+
+		HAL_GPIO_WritePin(S1_GPIO_Port, S1_Pin, 0);
+
+		xQueueSend(xQueue_pLines_empty, &p_line, 0);
+
+		queue_polling_lines_counter++;
+
+		if (p_pixel_parsel != temp_pixel_parsel)
+		{
+			*(uint32_t*)p_pixel_parsel = 0xAAAAAAAA;
+			*(uint32_t*)(p_pixel_parsel + 4) = pixel_parsel_counter;
+
+			xQueueSend(xQueue_pLines_busy_usb, &p_line, 0);
+		}
+
+		pixel_parsel_counter++;
+  }
+
+}
 /*
  *
  */
