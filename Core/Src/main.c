@@ -141,6 +141,8 @@ uint32_t counter_num_extra_count = 0;
 
 uint32_t numObjects = 0;
 
+uint32_t invalid_pixel_line[LINE_DIV_LENGHT];
+
 //-----------------------------
 
 uint32_t Objects_area[1000];
@@ -271,8 +273,9 @@ char param_str[32] = {0};
 
 //------------ major tuning parameters of scanner ----------------------
 
-#define PROTECT_SERVICE_ENABLE 1		// protect service enable
-//#define CLEAN_TEST_SERVICE_ENABLE 1		// clean test service enable
+#define PROTECT_SERVICE_ENABLE 			// protect service enable
+#define CLEAN_TEST_SERVICE_ENABLE 		// clean test service enable
+
 #define OVER_AREA 1500					// global max area
 #define IDLE_STATE_TIMEOUT 1200  		// idle state timeout in seconds
 #define DEFAULT_MIN_AREA 7
@@ -296,7 +299,7 @@ uint8_t change_num_param = 0;
 extern USBD_HandleTypeDef hUsbDeviceHS;
 
 uint8_t * p_pixel_parsel = NULL;
-uint8_t temp_pixel_parsel[LINE_TRANS_LENGHT];
+uint8_t temp_pixel_parsel[LINE_TRANS_LENGHT] = {0};
 uint32_t pixel_parsel_counter = 0;
 
 // after start scanner execute dummy scans for clear line,
@@ -304,12 +307,10 @@ uint32_t pixel_parsel_counter = 0;
 
 uint32_t start_time =0;
 
-#define INIT_CLEAR_TEST_SCAN_COUNTER_VALUE 	100
+#define DUMMY_SCAN_COUNTER_VALUE 		100
+uint32_t dummy_scan_counter = 0;
 
-#define INIT_DUMMY_SCAN_COUNTER_VALUE 		100
-uint32_t dummy_scan_counter = INIT_DUMMY_SCAN_COUNTER_VALUE;
-uint32_t clean_test_scan_counter = INIT_CLEAR_TEST_SCAN_COUNTER_VALUE;
-
+#define INVALID_PIXEL_VALUE 		50
 
 
 /* USER CODE END PFP */
@@ -1010,10 +1011,7 @@ void vTask_Main(void *pvParameters)
 
 				memset(last_line_shadow, 0, sizeof(last_line_shadow));
 
-				if (!(xEventGroupGetBits(xEventGroup_StatusFlags_2) & Flag_2_Envent_Mode))
-				{
-				  Clear_Counter();
-				}
+				if (!(xEventGroupGetBits(xEventGroup_StatusFlags_2) & Flag_2_Envent_Mode)) Clear_Counter();
 
 				StartScaner();
 				xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Scaner_State | Flag_Scaner_Event);
@@ -2098,6 +2096,9 @@ void vTask_Scanner(void *pvParameters)
 }
 */
 
+#define INVALID_PIXEL_MAX_NUM 10
+#define INVALID_PIXEL_MAX_LEN 10
+
 void vTask_Scanner(void *pvParameters)
 {
 	uint32_t j, p, i;
@@ -2120,122 +2121,128 @@ void vTask_Scanner(void *pvParameters)
 
 		if (xEventGroupGetBits(xEventGroup_StatusFlags_2) & Flag_2_Debug_Mode)
 		{
-			dummy_scan_counter = INIT_DUMMY_SCAN_COUNTER_VALUE;
+			dummy_scan_counter = 0;
 			if(!(xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Container_Removed))
 			{
 				xEventGroupSetBits(xEventGroup_StatusFlags, Flag_Activity_Detect);
 			}
 		}
 
-		if (xQueueReceive(xQueue_pLines_empty_usb, &p_pixel_parsel, 0) != pdTRUE)
+		if (xQueueReceive(xQueue_pLines_empty_usb, &p_pixel_parsel, 0) != pdTRUE) p_pixel_parsel = temp_pixel_parsel;
+
+		NumObjectsInCurrentLine = 0;
+		lastbit = 0;
+		k = 0;
+		r = 8;
+
+		*(p_line + 0) |= COMP_SR_C1VAL;
+		*(p_line + 1) |= COMP_SR_C1VAL;
+		*(p_line + 2) |= COMP_SR_C1VAL;
+		*(p_line + 3) |= COMP_SR_C1VAL;
+		*(p_line + 4) |= COMP_SR_C1VAL;
+		*(p_line + 5) |= COMP_SR_C1VAL;
+		*(p_line + 6) |= COMP_SR_C1VAL;
+		*(p_line + 7) |= COMP_SR_C1VAL;
+
+		if(dummy_scan_counter < DUMMY_SCAN_COUNTER_VALUE) // dummy scans for normal start line
 		{
-			p_pixel_parsel = temp_pixel_parsel;
-		}
+			dummy_scan_counter++;
 
-#ifndef CLEAN_TEST_SERVICE_ENABLE
-		clean_test_scan_counter =0;
-#endif		// CLEAN_TEST_SERVICE_ENABLE
-
-		if(dummy_scan_counter) // dummy scans for normal start line
-		{
-			if(dummy_scan_counter == INIT_DUMMY_SCAN_COUNTER_VALUE)
+#ifdef CLEAN_TEST_SERVICE_ENABLE
+			if(dummy_scan_counter == DUMMY_SCAN_COUNTER_VALUE) // start clean test
 			{
-				memset((uint8_t*)last_line, 0, sizeof(last_line));
-			}
-
-			dummy_scan_counter--;
-
-			k = 0; r = 8;
-
-			for (j = 0; j < LINE_DIV_LENGHT; j++)
-			{
-				*(p_pixel_parsel + r) &= ~( 1 << k++);
-
-				if(k == 8)
-				{
-					k = 0;
-					r++;
-				}
-			}
-		}
-		else // active dummy scans
-		{
-			if(clean_test_scan_counter)
-			{
-				if(clean_test_scan_counter == INIT_CLEAR_TEST_SCAN_COUNTER_VALUE) //initial zeros clean line test
-				{
-					memset((uint8_t*)clean_test_lines_buffer, 0, sizeof(clean_test_lines_buffer));
-					memset((uint8_t*)last_line, 0, sizeof(last_line));
-				}
-
-				clean_test_scan_counter--;
-
-				clear_tester = 0;
+				uint32_t invalid_pixel_counter = 0;
+				uint32_t invalid_pixel_len = 0;
+				uint32_t invalid_pixel_max_len = 0;
 
 				for (j = 0; j < LINE_DIV_LENGHT; j++)
 				{
-					if((*(p_line + j) & COMP_SR_C1VAL) || (j < 8))
+					if(*(p_line + j) & COMP_SR_C1VAL)
 					{
-						*(p_pixel_parsel + r) &= ~( 1 << k++);
+						*(p_pixel_parsel + r) &= ~(1 << k++);
+						invalid_pixel_line[j] = 0;
+						invalid_pixel_len = 0;
 					}
 					else
 					{
-						*(p_pixel_parsel + r) |= ( 1 << k++);
-
-						StopScaner();
-						xEventGroupSetBits(xEventGroup_StatusFlags, Flag_Scaner_Dirty | Flag_Scaner_Dirty_Event);
-						break;
+						*(p_pixel_parsel + r) |= (1 << k++);
+						invalid_pixel_line[j] = INVALID_PIXEL_VALUE;
+						invalid_pixel_counter++;
+						invalid_pixel_len++;
+						if(invalid_pixel_len > invalid_pixel_max_len) invalid_pixel_max_len = invalid_pixel_len;
 					}
+
+					if(k == 8) {k = 0; r++;}
+				}
+
+				if((invalid_pixel_counter >= INVALID_PIXEL_MAX_NUM) || (invalid_pixel_max_len >= INVALID_PIXEL_MAX_LEN))
+				{
+					StopScaner();
+					xEventGroupSetBits(xEventGroup_StatusFlags, Flag_Scaner_Dirty | Flag_Scaner_Dirty_Event);
 				}
 			}
-			else
+#endif		// CLEAN_TEST_SERVICE_ENABLE
+		}
+		else
+		{
+			/*if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Mode_Blue)
 			{
-				/*if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Mode_Blue)
-				{
-					// Transparent mode
+				// Transparent mode
 
-					int ej = 1000;
-
-					for (j = 0; j < LINE_DIV_LENGHT; j++)
-					{
-						if(!(*(p_line + j) & COMP_SR_C1VAL))
-						{
-							if(j > (ej+1))
-							{
-								for(int n=(ej+1); n < j; n++)
-								{
-									*(p_line + n) &= ~COMP_SR_C1VAL;
-									last_line_shadow[n] = 10;
-								}
-							}
-
-							last_line_shadow[j] = 10;
-							ej=j;
-						}
-						else if ((last_line[j]) && (last_line_shadow[j]))
-						{
-							*(p_line + j) &= ~COMP_SR_C1VAL;
-							last_line_shadow[j]--;
-						}
-					}
-				}*/
-
-				NumObjectsInCurrentLine = 0;
-				lastbit = 0;
-				k = 0;
-				r = 8;
+				int ej = 1000;
 
 				for (j = 0; j < LINE_DIV_LENGHT; j++)
 				{
-					if((*(p_line + j) & COMP_SR_C1VAL) || (j < 8)) // если пиксель засвечен
+					if(!(*(p_line + j) & COMP_SR_C1VAL))
 					{
-						current_line[j] = 0;					// помечаем в текущй линии его нулем (нет тени объекта)
-						lastbit = 0;							// сбрасываем флаг что фрагмент продолжается
+						if(j > (ej+1))
+						{
+							for(int n=(ej+1); n < j; n++)
+							{
+								*(p_line + n) &= ~COMP_SR_C1VAL;
+								last_line_shadow[n] = 10;
+							}
+						}
 
-						*(p_pixel_parsel + r) &= ~( 1 << k++);
+						last_line_shadow[j] = 10;
+						ej=j;
 					}
-					else										// если пиксель затемнен, то
+					else if ((last_line[j]) && (last_line_shadow[j]))
 					{
+						*(p_line + j) &= ~COMP_SR_C1VAL;
+						last_line_shadow[j]--;
+					}
+				}
+			}*/
+
+
+
+			for (j = 0; j < LINE_DIV_LENGHT; j++)
+			{
+				if(invalid_pixel_line[j] == INVALID_PIXEL_VALUE)
+				{
+					*(p_line + j) = *(p_line + (j - 1));
+				}
+
+				if(*(p_line + j) & COMP_SR_C1VAL) // если пиксель засвечен
+				{
+					if(invalid_pixel_line[j] != INVALID_PIXEL_VALUE)
+					{
+						invalid_pixel_line[j] = 0;
+					}
+
+					current_line[j] = 0;					// помечаем в текущй линии его нулем (нет тени объекта)
+					lastbit = 0;							// сбрасываем флаг что фрагмент продолжается
+					*(p_pixel_parsel + r) &= ~( 1 << k++);
+				}
+				else										// если пиксель затемнен, то
+				{
+					do{
+						if(invalid_pixel_line[j] != INVALID_PIXEL_VALUE)
+						{
+							invalid_pixel_line[j]++;
+						}
+
 						*(p_pixel_parsel + r) |= ( 1 << k++);
 
 						if(!lastbit)							// если фрагмент не длится, то
@@ -2273,173 +2280,169 @@ void vTask_Scanner(void *pvParameters)
 								}
 							}
 						}
+						}while(0);
 					}
 
-					// для ускорения работы в этом же цикле переносим текущее значение ячейки линии в последню,
-					// т.к. для следующего скана текущая будет последней.
+				// для ускорения работы в этом же цикле переносим текущее значение ячейки линии в последню,
+				// т.к. для следующего скана текущая будет последней.
 
-					if(k == 8) {k = 0; r++;}
+				if(k == 8) {k = 0; r++;}
+				last_line[j] = current_line[j];
+			}
 
-					last_line[j] = current_line[j];
+			// check if there are completed objects on the previous line
+
+			line_object_t * previous_p_objects_last_line = NULL;
+
+			for (j=0; j < NumObjectsInLastLine; j++)
+			{
+				// check over area
+				if (p_objects_last_line[j]->area > 5000/*OVER_AREA*/)
+				{
+#ifdef PROTECT_SERVICE_ENABLE
+					StopScaner();
+					xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Protect_State |  Flag_Protect_Event);
+#endif // PROTECT_SERVICE_ENABLE
+					p_objects_last_line[j]->area = 0;
+					continue;
 				}
 
-				// check if there are completed objects on the previous line
-
-				line_object_t * previous_p_objects_last_line = NULL;
-
-				for (j=0; j < NumObjectsInLastLine; j++)
+				if (!p_objects_last_line[j]->cont)
 				{
+					if (p_objects_last_line[j] == previous_p_objects_last_line) continue;
+					else previous_p_objects_last_line = p_objects_last_line[j];
+
+
 					// check over area
-					if (p_objects_last_line[j]->area > 5000/*OVER_AREA*/)
-					{
+
+				//	if (p_objects_last_line[j]->area > OVER_AREA)
+				//	{
 #ifdef PROTECT_SERVICE_ENABLE
-						StopScaner();
-						xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Protect_State |  Flag_Protect_Event);
+				//		StopScaner();
+				//		xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Protect_State |  Flag_Protect_Event);
 #endif // PROTECT_SERVICE_ENABLE
+				//		p_objects_last_line[j]->area = 0;
+				//		continue;
+				//	}
+
+					// check under area
+					if (p_objects_last_line[j]->area < min_area)
+					{
 						p_objects_last_line[j]->area = 0;
 						continue;
 					}
 
-					if (!p_objects_last_line[j]->cont)
+					numObjects_temp = numObjects;
+
+					/*if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Mode_Blue)
 					{
-						if (p_objects_last_line[j] == previous_p_objects_last_line)
-						{
-							continue;
-						}
-						else
-						{
-							previous_p_objects_last_line = p_objects_last_line[j];
-						}
+						Objects_area[numObjects] = p_objects_last_line[j]->area;
+						p_objects_last_line[j]->area = 0;
 
-						// check over area
+						numObjects++;
 
-					//	if (p_objects_last_line[j]->area > OVER_AREA)
-					//	{
-#ifdef PROTECT_SERVICE_ENABLE
-					//		StopScaner();
-					//		xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Protect_State |  Flag_Protect_Event);
-#endif // PROTECT_SERVICE_ENABLE
-					//		p_objects_last_line[j]->area = 0;
-					//		continue;
-					//	}
+						xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Activity_Detect);
 
-						// check under area
-						if (p_objects_last_line[j]->area < min_area)
+						if(numObjects > 1000) numObjects = 0;
+					}
+					else
+					{*/
+						while (p_objects_last_line[j]->area)
 						{
-							p_objects_last_line[j]->area = 0;
-							continue;
-						}
-						numObjects_temp = numObjects;
+							if (p_objects_last_line[j]->area > max_area)
+							{
+								//if (midle_area >= div_12)
+								//{
 
-						/*if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Mode_Blue)
-						{
-							Objects_area[numObjects] = p_objects_last_line[j]->area;
-							p_objects_last_line[j]->area = 0;
+	#ifndef OVER_RATE_ENABLE
+									xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Over_Count | Flag_Over_Count_Display);
+	#endif //OVER_RATE_ENABLE
+									Objects_area[numObjects] = max_area;
+									p_objects_last_line[j]->area -= max_area;
+								//}
+								//else
+								//{
+								//	Objects_area[numObjects] = p_objects_last_line[j]->area;
+								//	p_objects_last_line[j]->area = 0;
+								//}
+							}
+							else
+							{
+								Objects_area[numObjects] = p_objects_last_line[j]->area;
+								p_objects_last_line[j]->area = 0;
+							}
+
+							//if(numObjects)
+							//{
+							//	if (Objects_area[numObjects] == Objects_area[numObjects - 1])
+							//	{
+							//		numObjects--;
+							//	}
+							//}
 
 							numObjects++;
 
 							xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Activity_Detect);
 
-							if(numObjects > 1000) numObjects = 0;
-						}
-						else
-						{*/
-							while (p_objects_last_line[j]->area)
+							if (numObjects == NUM_PICES_FOR_EXECUTE_MIDLE)
 							{
-								if (p_objects_last_line[j]->area > max_area)
-								{
-									//if (midle_area >= div_12)
-									//{
-
-		#ifndef OVER_RATE_ENABLE
-										xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Over_Count | Flag_Over_Count_Display);
-		#endif //OVER_RATE_ENABLE
-										Objects_area[numObjects] = max_area;
-										p_objects_last_line[j]->area -= max_area;
-									//}
-									//else
-									//{
-									//	Objects_area[numObjects] = p_objects_last_line[j]->area;
-									//	p_objects_last_line[j]->area = 0;
-									//}
-								}
-								else
-								{
-									Objects_area[numObjects] = p_objects_last_line[j]->area;
-									p_objects_last_line[j]->area = 0;
-								}
-
-								//if(numObjects)
-								//{
-								//	if (Objects_area[numObjects] == Objects_area[numObjects - 1])
-								//	{
-								//		numObjects--;
-								//	}
-								//}
-
-								numObjects++;
-
-								xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Activity_Detect);
-
-								if (numObjects == NUM_PICES_FOR_EXECUTE_MIDLE)
-								{
-									midle_area = 0;
-									for (i=0; i < NUM_PICES_FOR_EXECUTE_MIDLE; i++) midle_area += Objects_area[i];
-									midle_area /= NUM_PICES_FOR_EXECUTE_MIDLE;
-									//max_area = (midle_area < div_12) ? (midle_area * k_1) : (midle_area * k_2);
-									if(midle_area <= div_11) max_area = midle_area * k_0;
-									else if(midle_area <= div_12) max_area = midle_area * k_1;
-									else max_area = midle_area * k_2;
-									min_area = (midle_area*5)/100;
-								}
-
-								if(numObjects > 1000) numObjects = 0;
+								midle_area = 0;
+								for (i=0; i < NUM_PICES_FOR_EXECUTE_MIDLE; i++) midle_area += Objects_area[i];
+								midle_area /= NUM_PICES_FOR_EXECUTE_MIDLE;
+								//max_area = (midle_area < div_12) ? (midle_area * k_1) : (midle_area * k_2);
+								if(midle_area <= div_11) max_area = midle_area * k_0;
+								else if(midle_area <= div_12) max_area = midle_area * k_1;
+								else max_area = midle_area * k_2;
+								min_area = (midle_area*5)/100;
 							}
 
-		//#ifdef OVER_RATE_ENABLE
-							if ((numObjects_temp != numObjects) && (midle_area <= div_12) && numObjects > NUM_PICES_FOR_EXECUTE_MIDLE)
+							if(numObjects > 1000) numObjects = 0;
+						}
+
+	//#ifdef OVER_RATE_ENABLE
+						if ((numObjects_temp != numObjects) && (midle_area <= div_12) && numObjects > NUM_PICES_FOR_EXECUTE_MIDLE)
+						{
+							for (p=1; p < NUM_PICES_PERIOD; p++)
 							{
-								for (p=1; p < NUM_PICES_PERIOD; p++)
-								{
-									pices_time[p-1] = pices_time[p];
-								}
+								pices_time[p-1] = pices_time[p];
+							}
 
-								pices_time[NUM_PICES_PERIOD - 1]  = HAL_GetTick();
+							pices_time[NUM_PICES_PERIOD - 1]  = HAL_GetTick();
 
-								if (numObjects > (NUM_PICES_PERIOD - 1))
+							if (numObjects > (NUM_PICES_PERIOD - 1))
+							{
+								pice_period = (pices_time[NUM_PICES_PERIOD - 1] - pices_time[0]) / (NUM_PICES_PERIOD - 1);
+								if (pice_period < MIN_PICE_PERIOD)
 								{
-									pice_period = (pices_time[NUM_PICES_PERIOD - 1] - pices_time[0]) / (NUM_PICES_PERIOD - 1);
-									if (pice_period < MIN_PICE_PERIOD)
+									counter_num_extra_count++;
+									xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Over_Count | Flag_Over_Count_Display);
+
+									for (p=0; p < NUM_PICES_PERIOD; p++)
 									{
-										counter_num_extra_count++;
-										xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Over_Count | Flag_Over_Count_Display);
-
-										for (p=0; p < NUM_PICES_PERIOD; p++)
-										{
-											pices_time[p] = 0;
-										}
+										pices_time[p] = 0;
 									}
 								}
 							}
-	//#endif // OVER_RATE_ENABLE
-						//}
-					}
+						}
+//#endif // OVER_RATE_ENABLE
+					//}
 				}
-
-				// transfer objects of current line to last line
-
-				for (j=0; j < NumObjectsInCurrentLine; j++)
-				{
-					p_objects_last_line[j] = &objects_last_line[0] + (p_objects_current_line[j] - &objects_current_line[0]);
-
-					p_objects_last_line[j]->area = p_objects_current_line[j]->area;
-					p_objects_last_line[j]->cont = 0;
-					p_objects_last_line[j]->sl = 0;
-				}
-
-				NumObjectsInLastLine = NumObjectsInCurrentLine;
 			}
+
+			// transfer objects of current line to last line
+
+			for (j=0; j < NumObjectsInCurrentLine; j++)
+			{
+				p_objects_last_line[j] = &objects_last_line[0] + (p_objects_current_line[j] - &objects_current_line[0]);
+
+				p_objects_last_line[j]->area = p_objects_current_line[j]->area;
+				p_objects_last_line[j]->cont = 0;
+				p_objects_last_line[j]->sl = 0;
+			}
+
+			NumObjectsInLastLine = NumObjectsInCurrentLine;
 		}
+
 
 		HAL_GPIO_WritePin(S1_GPIO_Port, S1_Pin, 0);
 
@@ -2956,8 +2959,10 @@ void StartScaner(void)
 {
 	//COMP1->CFGR |= COMP_CFGRx_INMSEL_0;
 
-	dummy_scan_counter = INIT_CLEAR_TEST_SCAN_COUNTER_VALUE;
-	clean_test_scan_counter = INIT_CLEAR_TEST_SCAN_COUNTER_VALUE;
+	memset((uint8_t*)last_line, 0, sizeof(last_line));
+	memset((uint8_t*)lines_buffer_uart, 0, sizeof(lines_buffer_uart));
+
+	dummy_scan_counter = 0;
 
 	TIM17->CR1 |= TIM_CR1_CEN;
 	TIM17->CCER = TIM_CCER_CC1E;
