@@ -2135,14 +2135,14 @@ void vTask_Scanner(void *pvParameters)
 		k = 0;
 		r = 8;
 
-		*(p_line + 0) |= COMP_SR_C1VAL;
-		*(p_line + 1) |= COMP_SR_C1VAL;
-		*(p_line + 2) |= COMP_SR_C1VAL;
-		*(p_line + 3) |= COMP_SR_C1VAL;
-		*(p_line + 4) |= COMP_SR_C1VAL;
-		*(p_line + 5) |= COMP_SR_C1VAL;
-		*(p_line + 6) |= COMP_SR_C1VAL;
-		*(p_line + 7) |= COMP_SR_C1VAL;
+		*(p_line + 0) = COMP_SR_C1VAL;
+		*(p_line + 1) = COMP_SR_C1VAL;
+		*(p_line + 2) = COMP_SR_C1VAL;
+		*(p_line + 3) = COMP_SR_C1VAL;
+		*(p_line + 4) = COMP_SR_C1VAL;
+		*(p_line + 5) = COMP_SR_C1VAL;
+		*(p_line + 6) = COMP_SR_C1VAL;
+		*(p_line + 7) = COMP_SR_C1VAL;
 
 		if(dummy_scan_counter < DUMMY_SCAN_COUNTER_VALUE) // dummy scans for normal start line
 		{
@@ -2159,20 +2159,20 @@ void vTask_Scanner(void *pvParameters)
 				{
 					if(*(p_line + j) & COMP_SR_C1VAL)
 					{
-						*(p_pixel_parsel + r) &= ~(1 << k++);
+						*(p_pixel_parsel + r) &= ~(1 << k);
 						invalid_pixel_line[j] = 0;
 						invalid_pixel_len = 0;
 					}
 					else
 					{
-						*(p_pixel_parsel + r) |= (1 << k++);
+						*(p_pixel_parsel + r) |= (1 << k);
 						invalid_pixel_line[j] = INVALID_PIXEL_VALUE;
 						invalid_pixel_counter++; 	// summary number invalid pixels in line
 						invalid_pixel_len++; 		// continuos line of invalid pixels
 						if(invalid_pixel_len > invalid_pixel_max_len) invalid_pixel_max_len = invalid_pixel_len;
 					}
 
-					if(k == 8) {k = 0; r++;}
+					if(++k == 8) {k = 0; r++;}
 				}
 
 				if((invalid_pixel_counter >= INVALID_PIXEL_MAX_NUM) || (invalid_pixel_max_len >= INVALID_PIXEL_MAX_LEN))
@@ -2233,7 +2233,7 @@ void vTask_Scanner(void *pvParameters)
 
 					current_line[j] = 0;					// помечаем в текущй линии его нулем (нет тени объекта)
 					lastbit = 0;							// сбрасываем флаг что фрагмент продолжается
-					*(p_pixel_parsel + r) &= ~( 1 << k++);
+					*(p_pixel_parsel + r) &= ~( 1 << k);
 				}
 				else										// если пиксель затемнен, то
 				{
@@ -2242,7 +2242,7 @@ void vTask_Scanner(void *pvParameters)
 						invalid_pixel_line[j]++;
 					}
 
-					*(p_pixel_parsel + r) |= ( 1 << k++);
+					*(p_pixel_parsel + r) |= ( 1 << k);
 
 					if(!lastbit)							// если фрагмент не длится, то
 					{
@@ -2284,7 +2284,7 @@ void vTask_Scanner(void *pvParameters)
 				// для ускорения работы в этом же цикле переносим текущее значение ячейки линии в последню,
 				// т.к. для следующего скана текущая будет последней.
 
-				if(k == 8) {k = 0; r++;}
+				if(++k == 8) {k = 0; r++;}
 				last_line[j] = current_line[j];
 			}
 
