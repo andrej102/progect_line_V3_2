@@ -273,7 +273,7 @@ char param_str[32] = {0};
 
 #define PROTECT_SERVICE_ENABLE 1		// protect service enable
 //#define CLEAN_TEST_SERVICE_ENABLE 1		// clean test service enable
-#define OVER_AREA 1500					// global max area
+#define OVER_AREA 5000					// global max area
 #define IDLE_STATE_TIMEOUT 1200  		// idle state timeout in seconds
 #define DEFAULT_MIN_AREA 7
 
@@ -310,7 +310,11 @@ uint32_t start_time =0;
 uint32_t dummy_scan_counter = INIT_DUMMY_SCAN_COUNTER_VALUE;
 uint32_t clean_test_scan_counter = INIT_CLEAR_TEST_SCAN_COUNTER_VALUE;
 
+uint32_t over_count_protect_counter = 0;
+uint32_t over_count_protect_pices_per_period = 0;
 
+#define OVER_COUNT_PROTECT 20
+#define OVER_COUNT_PROTECT_TIME 200
 
 /* USER CODE END PFP */
 
@@ -1019,7 +1023,7 @@ void vTask_Main(void *pvParameters)
 				xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Scaner_State | Flag_Scaner_Event);
 			}
 		}
-		else if (!(xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Protect_State))
+		else if (!(xEventGroupGetBits(xEventGroup_StatusFlags) & (Flag_Protect_State | Flag_Scaner_Dirty)))
 		{
 			if ((xTaskGetTickCount() - previousTickCount) >= 1000)
 			{
@@ -1130,25 +1134,13 @@ void vTask_Display(void *pvParameters)
 
 				if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Mode_Blue)
 				{
-					if (!active_page)
-					{
-						tft_send_click(4, 1);
-					}
-					else
-					{
-						tft_send_click(12, 1);
-					}
+					if (!active_page) tft_send_click(4, 1);
+					else tft_send_click(12, 1);
 				}
 				else
 				{
-					if (!active_page)
-					{
-						tft_send_click(4, 0);
-					}
-					else
-					{
-						tft_send_click(12, 0);
-					}
+					if (!active_page) tft_send_click(4, 0);
+					else tft_send_click(12, 0);
 				}
 
 				if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Idle_State)
@@ -1174,21 +1166,14 @@ void vTask_Display(void *pvParameters)
 				{
 					xEventGroupClearBits( xEventGroup_StatusFlags, Flag_Over_Count_Display);
 
-					if (!timer_over_count_signal_display)
-					{
-						tft_show_overcount(1);
-					}
-
+					if (!timer_over_count_signal_display) tft_show_overcount(1);
 					timer_over_count_signal_display = 5;
 				}
 
 				//------
-				if ( (!(xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Protect_State)) /*&& (!(xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Idle_State))*/)
+				if (!(xEventGroupGetBits(xEventGroup_StatusFlags) & ( Flag_Protect_State | Flag_Scaner_Dirty)))
 				{
-					if (timer_counter_flashing_display)
-					{
-						timer_counter_flashing_display--;
-					}
+					if (timer_counter_flashing_display) timer_counter_flashing_display--;
 
 					if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Container_Removed)
 					{
@@ -1348,10 +1333,7 @@ void service_page_1(uint8_t but, uint8_t val)
 		{
 			if (val)
 			{
-				if ((HAL_GetTick() - last_time_touch) > TOUCH_PERIOD)
-				{
-					touch_counter = 1;
-				}
+				if ((HAL_GetTick() - last_time_touch) > TOUCH_PERIOD) touch_counter = 1;
 				else
 				{
 					touch_counter++;
@@ -1372,14 +1354,8 @@ void service_page_1(uint8_t but, uint8_t val)
 		{
 		  if (val)
 		  {
-			  if(num_show_object_area < numObjects)
-			  {
-				  num_show_object_area++;
-			  }
-			  else
-			  {
-				  num_show_object_area = 1;
-			  }
+			  if(num_show_object_area < numObjects) num_show_object_area++;
+			  else num_show_object_area = 1;
 		  }
 
 		  break;
@@ -1389,10 +1365,7 @@ void service_page_1(uint8_t but, uint8_t val)
 		{
 		  if (val)
 		  {
-			  if(num_show_object_area > 1)
-			  {
-				  num_show_object_area--;
-			  }
+			  if(num_show_object_area > 1) num_show_object_area--;
 		  }
 
 		  break;
@@ -1679,6 +1652,11 @@ void vTask_ContainerDetect(void *pvParameters)
 				  event_state = 1;
 
 				  if (!(xEventGroupGetBits(xEventGroup_StatusFlags_2) & Flag_2_Envent_Mode))
+				  {
+					  Clear_Counter();
+				  }
+
+				  if (xEventGroupGetBits(xEventGroup_StatusFlags) & (Flag_Protect_State | Flag_Scaner_Dirty))
 				  {
 					  Clear_Counter();
 				  }
@@ -2111,7 +2089,6 @@ void vTask_Scanner(void *pvParameters)
 
 	uint32_t clear_tester = 0;
 
-
 	for(;;)
 	{
 		xQueueReceive(xQueue_pLines_busy, &p_line, portMAX_DELAY);
@@ -2121,6 +2098,15 @@ void vTask_Scanner(void *pvParameters)
 		if (xEventGroupGetBits(xEventGroup_StatusFlags_2) & Flag_2_Debug_Mode)
 		{
 			dummy_scan_counter = INIT_DUMMY_SCAN_COUNTER_VALUE;
+			memset((uint8_t*)last_line, 0, sizeof(last_line));
+			memset((uint8_t*)clean_test_lines_buffer, 0, sizeof(clean_test_lines_buffer));
+
+#ifndef CLEAN_TEST_SERVICE_ENABLE
+			clean_test_scan_counter =0;
+#else
+			clean_test_scan_counter = INIT_CLEAR_TEST_SCAN_COUNTER_VALUE;
+#endif		// CLEAN_TEST_SERVICE_ENABLE
+
 			if(!(xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Container_Removed))
 			{
 				xEventGroupSetBits(xEventGroup_StatusFlags, Flag_Activity_Detect);
@@ -2132,302 +2118,203 @@ void vTask_Scanner(void *pvParameters)
 			p_pixel_parsel = temp_pixel_parsel;
 		}
 
-#ifndef CLEAN_TEST_SERVICE_ENABLE
-		clean_test_scan_counter =0;
-#endif		// CLEAN_TEST_SERVICE_ENABLE
-
 		if(dummy_scan_counter) // dummy scans for normal start line
 		{
-			if(dummy_scan_counter == INIT_DUMMY_SCAN_COUNTER_VALUE)
-			{
-				memset((uint8_t*)last_line, 0, sizeof(last_line));
-			}
-
 			dummy_scan_counter--;
-
-			k = 0; r = 8;
+			memset(p_pixel_parsel, 0, LINE_TRANS_LENGHT);
+		}
+		else if(clean_test_scan_counter) // clean test scans
+		{
+			clean_test_scan_counter--;
+			clear_tester = 0;
 
 			for (j = 0; j < LINE_DIV_LENGHT; j++)
 			{
-				*(p_pixel_parsel + r) &= ~( 1 << k++);
-
-				if(k == 8)
+				if((*(p_line + j) & COMP_SR_C1VAL) || (j < 8))
 				{
-					k = 0;
-					r++;
+					*(p_pixel_parsel + r) &= ~( 1 << k++);
+				}
+				else
+				{
+					*(p_pixel_parsel + r) |= ( 1 << k++);
+
+					StopScaner();
+					xEventGroupSetBits(xEventGroup_StatusFlags, Flag_Scaner_Dirty | Flag_Scaner_Dirty_Event);
+					break;
 				}
 			}
 		}
-		else // active dummy scans
+		else
 		{
-			if(clean_test_scan_counter)
+			NumObjectsInCurrentLine = 0;
+			lastbit = 0;
+			k = 0;
+			r = 8;
+
+			for (j = 0; j < LINE_DIV_LENGHT; j++)
 			{
-				if(clean_test_scan_counter == INIT_CLEAR_TEST_SCAN_COUNTER_VALUE) //initial zeros clean line test
+				if((*(p_line + j) & COMP_SR_C1VAL) || (j < 8)) // если пиксель засвечен
 				{
-					memset((uint8_t*)clean_test_lines_buffer, 0, sizeof(clean_test_lines_buffer));
-					memset((uint8_t*)last_line, 0, sizeof(last_line));
+					current_line[j] = 0;					// помечаем в текущй линии его нулем (нет тени объекта)
+					lastbit = 0;							// сбрасываем флаг что фрагмент продолжается
+
+					*(p_pixel_parsel + r) &= ~( 1 << k++);
+				}
+				else										// если пиксель затемнен, то
+				{
+					*(p_pixel_parsel + r) |= ( 1 << k++);
+
+					if(!lastbit)							// если фрагмент не длится, то
+					{
+						NumObjectsInCurrentLine++;			// значит встретили новый фрагмент и увеличиваем счетчик фрагментов текущей линии
+						p_objects_current_line[NumObjectsInCurrentLine-1] = &objects_current_line[NumObjectsInCurrentLine-1]; // инициируем очередной указатель на фрагмента (назначаем указать на его свойства)
+						p_objects_current_line[NumObjectsInCurrentLine-1]->area = 0; // и обнуляем площадь фрагмента (через указатель на его свойства)
+					}
+
+					current_line[j] = NumObjectsInCurrentLine; // маркируем ячеку пикселя номером фрагмента (номер фрагмента-1 , это и номер указателя (в массиве указателей) на свойства данного фрагмента, значение которого в дальнейшем может изменится (станет указывать на свойства другого фрагмента, для объединения фрагментов))
+					p_objects_current_line[NumObjectsInCurrentLine-1]->area++; // увеличиваем площаль фрагмента на один пиксель
+					lastbit = 1;
+
+					// проверяем что было в прошлой линии на данном пикселе
+
+					if(last_line[j])		//если он там тоже был фрагмент, то очевидно продолжается один объект
+					{
+						p_objects_last_line[last_line[j]-1]->cont = 1; // тогда маркируем фрагмент прошлой линии что он продолжается в текущей линии
+
+						if (!p_objects_last_line[last_line[j]-1]->sl) // если площадь текущего фрагмента прошлой линии не была добавлена к площади текущему объекту текущей линии, то
+						{
+							p_objects_current_line[current_line[j]-1]->area += p_objects_last_line[last_line[j]-1]->area; // поэтому добавляем к площади текущего фрагмента текущей линии площаль от текущего фрагмента прошлой линии
+							p_objects_last_line[last_line[j]-1]->sl = current_line[j]; // и отмечаем номером указателячто площадь данного фрагмена прошлой линии уже добавлена к текущему фрагменту текущей линии
+						}
+						else // если площадь текущего фрагмента прошлой линии уже была добавлена к текущему фрагменту текущей линии, то
+						{
+							if (p_objects_current_line[p_objects_last_line[last_line[j]-1]->sl - 1] != p_objects_current_line[current_line[j]-1]) // проверяем, если текущий фрагмент текущей линии не тот же, к которому была добавка площади из текущего фрагмента прошлой линии, то
+							{
+								// получается то данный фрагмент прошлой линии покрывает и текущий фрагмент текущей линии, поэтому
+								// поэтому решаем что это все один фрагмен одного объекта и
+								// прибавляем площадь текущего фрагмента текущей линии к тому фрагменту, к которому была прибовка из данного фрагмента прошлой линии
+								p_objects_current_line[p_objects_last_line[last_line[j]-1]->sl-1]->area += p_objects_current_line[current_line[j]-1]->area;
+								// а указатель текущего фрагмента текущей линии начинает указывать те же свойства фаргмента
+								p_objects_current_line[current_line[j]-1] = p_objects_current_line[p_objects_last_line[last_line[j]-1]->sl - 1];
+							}
+						}
+					}
 				}
 
-				clean_test_scan_counter--;
+				// для ускорения работы в этом же цикле переносим текущее значение ячейки линии в последню,
+				// т.к. для следующего скана текущая будет последней.
 
-				clear_tester = 0;
+				if(k == 8) {k = 0; r++;}
 
-				for (j = 0; j < LINE_DIV_LENGHT; j++)
-				{
-					if((*(p_line + j) & COMP_SR_C1VAL) || (j < 8))
-					{
-						*(p_pixel_parsel + r) &= ~( 1 << k++);
-					}
-					else
-					{
-						*(p_pixel_parsel + r) |= ( 1 << k++);
-
-						StopScaner();
-						xEventGroupSetBits(xEventGroup_StatusFlags, Flag_Scaner_Dirty | Flag_Scaner_Dirty_Event);
-						break;
-					}
-				}
+				last_line[j] = current_line[j];
 			}
-			else
+
+			// check if there are completed objects on the previous line
+
+			line_object_t * previous_p_objects_last_line = NULL;
+
+			for (j=0; j < NumObjectsInLastLine; j++)
 			{
-				/*if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Mode_Blue)
+				// check over area
+				if (p_objects_last_line[j]->area > OVER_AREA)
 				{
-					// Transparent mode
-
-					int ej = 1000;
-
-					for (j = 0; j < LINE_DIV_LENGHT; j++)
-					{
-						if(!(*(p_line + j) & COMP_SR_C1VAL))
-						{
-							if(j > (ej+1))
-							{
-								for(int n=(ej+1); n < j; n++)
-								{
-									*(p_line + n) &= ~COMP_SR_C1VAL;
-									last_line_shadow[n] = 10;
-								}
-							}
-
-							last_line_shadow[j] = 10;
-							ej=j;
-						}
-						else if ((last_line[j]) && (last_line_shadow[j]))
-						{
-							*(p_line + j) &= ~COMP_SR_C1VAL;
-							last_line_shadow[j]--;
-						}
-					}
-				}*/
-
-				NumObjectsInCurrentLine = 0;
-				lastbit = 0;
-				k = 0;
-				r = 8;
-
-				for (j = 0; j < LINE_DIV_LENGHT; j++)
-				{
-					if((*(p_line + j) & COMP_SR_C1VAL) || (j < 8)) // если пиксель засвечен
-					{
-						current_line[j] = 0;					// помечаем в текущй линии его нулем (нет тени объекта)
-						lastbit = 0;							// сбрасываем флаг что фрагмент продолжается
-
-						*(p_pixel_parsel + r) &= ~( 1 << k++);
-					}
-					else										// если пиксель затемнен, то
-					{
-						*(p_pixel_parsel + r) |= ( 1 << k++);
-
-						if(!lastbit)							// если фрагмент не длится, то
-						{
-							NumObjectsInCurrentLine++;			// значит встретили новый фрагмент и увеличиваем счетчик фрагментов текущей линии
-							p_objects_current_line[NumObjectsInCurrentLine-1] = &objects_current_line[NumObjectsInCurrentLine-1]; // инициируем очередной указатель на фрагмента (назначаем указать на его свойства)
-							p_objects_current_line[NumObjectsInCurrentLine-1]->area = 0; // и обнуляем площадь фрагмента (через указатель на его свойства)
-						}
-
-						current_line[j] = NumObjectsInCurrentLine; // маркируем ячеку пикселя номером фрагмента (номер фрагмента-1 , это и номер указателя (в массиве указателей) на свойства данного фрагмента, значение которого в дальнейшем может изменится (станет указывать на свойства другого фрагмента, для объединения фрагментов))
-						p_objects_current_line[NumObjectsInCurrentLine-1]->area++; // увеличиваем площаль фрагмента на один пиксель
-						lastbit = 1;
-
-						// проверяем что было в прошлой линии на данном пикселе
-
-						if(last_line[j])		//если он там тоже был фрагмент, то очевидно продолжается один объект
-						{
-							p_objects_last_line[last_line[j]-1]->cont = 1; // тогда маркируем фрагмент прошлой линии что он продолжается в текущей линии
-
-							if (!p_objects_last_line[last_line[j]-1]->sl) // если площадь текущего фрагмента прошлой линии не была добавлена к площади текущему объекту текущей линии, то
-							{
-								p_objects_current_line[current_line[j]-1]->area += p_objects_last_line[last_line[j]-1]->area; // поэтому добавляем к площади текущего фрагмента текущей линии площаль от текущего фрагмента прошлой линии
-								p_objects_last_line[last_line[j]-1]->sl = current_line[j]; // и отмечаем номером указателячто площадь данного фрагмена прошлой линии уже добавлена к текущему фрагменту текущей линии
-							}
-							else // если площадь текущего фрагмента прошлой линии уже была добавлена к текущему фрагменту текущей линии, то
-							{
-								if (p_objects_current_line[p_objects_last_line[last_line[j]-1]->sl - 1] != p_objects_current_line[current_line[j]-1]) // проверяем, если текущий фрагмент текущей линии не тот же, к которому была добавка площади из текущего фрагмента прошлой линии, то
-								{
-									// получается то данный фрагмент прошлой линии покрывает и текущий фрагмент текущей линии, поэтому
-									// поэтому решаем что это все один фрагмен одного объекта и
-									// прибавляем площадь текущего фрагмента текущей линии к тому фрагменту, к которому была прибовка из данного фрагмента прошлой линии
-									p_objects_current_line[p_objects_last_line[last_line[j]-1]->sl-1]->area += p_objects_current_line[current_line[j]-1]->area;
-									// а указатель текущего фрагмента текущей линии начинает указывать те же свойства фаргмента
-									p_objects_current_line[current_line[j]-1] = p_objects_current_line[p_objects_last_line[last_line[j]-1]->sl - 1];
-								}
-							}
-						}
-					}
-
-					// для ускорения работы в этом же цикле переносим текущее значение ячейки линии в последню,
-					// т.к. для следующего скана текущая будет последней.
-
-					if(k == 8) {k = 0; r++;}
-
-					last_line[j] = current_line[j];
+					p_objects_last_line[j]->area = 0;
+#ifdef PROTECT_SERVICE_ENABLE
+					StopScaner();
+					xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Protect_State |  Flag_Protect_Event);
+					break;
+#else
+					continue;
+#endif // PROTECT_SERVICE_ENABLE
 				}
 
-				// check if there are completed objects on the previous line
-
-				line_object_t * previous_p_objects_last_line = NULL;
-
-				for (j=0; j < NumObjectsInLastLine; j++)
+				if (!p_objects_last_line[j]->cont)
 				{
-					// check over area
-					if (p_objects_last_line[j]->area > 5000/*OVER_AREA*/)
+					if (p_objects_last_line[j] == previous_p_objects_last_line) continue;
+					else previous_p_objects_last_line = p_objects_last_line[j];
+
+					// check under area
+
+					if (p_objects_last_line[j]->area < min_area)
 					{
-#ifdef PROTECT_SERVICE_ENABLE
-						StopScaner();
-						xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Protect_State |  Flag_Protect_Event);
-#endif // PROTECT_SERVICE_ENABLE
 						p_objects_last_line[j]->area = 0;
 						continue;
 					}
 
-					if (!p_objects_last_line[j]->cont)
+					numObjects_temp = numObjects;
+
+					while (p_objects_last_line[j]->area)
 					{
-						if (p_objects_last_line[j] == previous_p_objects_last_line)
+						if (p_objects_last_line[j]->area > max_area)
 						{
-							continue;
+#ifndef OVER_RATE_ENABLE
+							xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Over_Count | Flag_Over_Count_Display);
+#endif //OVER_RATE_ENABLE
+							Objects_area[numObjects] = max_area;
+							p_objects_last_line[j]->area -= max_area;
 						}
 						else
-						{
-							previous_p_objects_last_line = p_objects_last_line[j];
-						}
-
-						// check over area
-
-					//	if (p_objects_last_line[j]->area > OVER_AREA)
-					//	{
-#ifdef PROTECT_SERVICE_ENABLE
-					//		StopScaner();
-					//		xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Protect_State |  Flag_Protect_Event);
-#endif // PROTECT_SERVICE_ENABLE
-					//		p_objects_last_line[j]->area = 0;
-					//		continue;
-					//	}
-
-						// check under area
-						if (p_objects_last_line[j]->area < min_area)
-						{
-							p_objects_last_line[j]->area = 0;
-							continue;
-						}
-						numObjects_temp = numObjects;
-
-						/*if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Mode_Blue)
 						{
 							Objects_area[numObjects] = p_objects_last_line[j]->area;
 							p_objects_last_line[j]->area = 0;
-
-							numObjects++;
-
-							xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Activity_Detect);
-
-							if(numObjects > 1000) numObjects = 0;
 						}
-						else
-						{*/
-							while (p_objects_last_line[j]->area)
-							{
-								if (p_objects_last_line[j]->area > max_area)
-								{
-									//if (midle_area >= div_12)
-									//{
 
-		#ifndef OVER_RATE_ENABLE
-										xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Over_Count | Flag_Over_Count_Display);
-		#endif //OVER_RATE_ENABLE
-										Objects_area[numObjects] = max_area;
-										p_objects_last_line[j]->area -= max_area;
-									//}
-									//else
-									//{
-									//	Objects_area[numObjects] = p_objects_last_line[j]->area;
-									//	p_objects_last_line[j]->area = 0;
-									//}
-								}
-								else
-								{
-									Objects_area[numObjects] = p_objects_last_line[j]->area;
-									p_objects_last_line[j]->area = 0;
-								}
+						numObjects++;
 
-								//if(numObjects)
-								//{
-								//	if (Objects_area[numObjects] == Objects_area[numObjects - 1])
-								//	{
-								//		numObjects--;
-								//	}
-								//}
+						over_count_protect_pices_per_period++;
+						if(over_count_protect_pices_per_period > OVER_COUNT_PROTECT) break;
 
-								numObjects++;
+						xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Activity_Detect);
 
-								xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Activity_Detect);
+						if (numObjects == NUM_PICES_FOR_EXECUTE_MIDLE)
+						{
+							midle_area = 0;
+							for (i=0; i < NUM_PICES_FOR_EXECUTE_MIDLE; i++) midle_area += Objects_area[i];
+							midle_area /= NUM_PICES_FOR_EXECUTE_MIDLE;
+							//max_area = (midle_area < div_12) ? (midle_area * k_1) : (midle_area * k_2);
+							if(midle_area <= div_11) max_area = midle_area * k_0;
+							else if(midle_area <= div_12) max_area = midle_area * k_1;
+							else max_area = midle_area * k_2;
+							min_area = (midle_area*5)/100;
+						}
 
-								if (numObjects == NUM_PICES_FOR_EXECUTE_MIDLE)
-								{
-									midle_area = 0;
-									for (i=0; i < NUM_PICES_FOR_EXECUTE_MIDLE; i++) midle_area += Objects_area[i];
-									midle_area /= NUM_PICES_FOR_EXECUTE_MIDLE;
-									//max_area = (midle_area < div_12) ? (midle_area * k_1) : (midle_area * k_2);
-									if(midle_area <= div_11) max_area = midle_area * k_0;
-									else if(midle_area <= div_12) max_area = midle_area * k_1;
-									else max_area = midle_area * k_2;
-									min_area = (midle_area*5)/100;
-								}
-
-								if(numObjects > 1000) numObjects = 0;
-							}
-
-		//#ifdef OVER_RATE_ENABLE
-							if ((numObjects_temp != numObjects) && (midle_area <= div_12) && numObjects > NUM_PICES_FOR_EXECUTE_MIDLE)
-							{
-								for (p=1; p < NUM_PICES_PERIOD; p++)
-								{
-									pices_time[p-1] = pices_time[p];
-								}
-
-								pices_time[NUM_PICES_PERIOD - 1]  = HAL_GetTick();
-
-								if (numObjects > (NUM_PICES_PERIOD - 1))
-								{
-									pice_period = (pices_time[NUM_PICES_PERIOD - 1] - pices_time[0]) / (NUM_PICES_PERIOD - 1);
-									if (pice_period < MIN_PICE_PERIOD)
-									{
-										counter_num_extra_count++;
-										xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Over_Count | Flag_Over_Count_Display);
-
-										for (p=0; p < NUM_PICES_PERIOD; p++)
-										{
-											pices_time[p] = 0;
-										}
-									}
-								}
-							}
-	//#endif // OVER_RATE_ENABLE
-						//}
+						if(numObjects > 1000) numObjects = 0;
 					}
+
+					if(over_count_protect_pices_per_period > OVER_COUNT_PROTECT)
+					{
+						StopScaner();
+						xEventGroupSetBits(xEventGroup_StatusFlags, Flag_Scaner_Dirty | Flag_Scaner_Dirty_Event);
+						break;
+					}
+
+//#ifdef OVER_RATE_ENABLE
+					if ((numObjects_temp != numObjects) && (midle_area <= div_12) && numObjects > NUM_PICES_FOR_EXECUTE_MIDLE)
+					{
+						for (p=1; p < NUM_PICES_PERIOD; p++) pices_time[p-1] = pices_time[p];
+
+						pices_time[NUM_PICES_PERIOD - 1]  = HAL_GetTick();
+
+						if (numObjects > (NUM_PICES_PERIOD - 1))
+						{
+							pice_period = (pices_time[NUM_PICES_PERIOD - 1] - pices_time[0]) / (NUM_PICES_PERIOD - 1);
+							if (pice_period < MIN_PICE_PERIOD)
+							{
+								counter_num_extra_count++;
+								xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Over_Count | Flag_Over_Count_Display);
+
+								for (p=0; p < NUM_PICES_PERIOD; p++) pices_time[p] = 0;
+							}
+						}
+					}
+//#endif // OVER_RATE_ENABLE
 				}
+			}
 
-				// transfer objects of current line to last line
+			// transfer objects of current line to last line
 
+			if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Scaner_State)
+			{
 				for (j=0; j < NumObjectsInCurrentLine; j++)
 				{
 					p_objects_last_line[j] = &objects_last_line[0] + (p_objects_current_line[j] - &objects_current_line[0]);
@@ -2438,6 +2325,12 @@ void vTask_Scanner(void *pvParameters)
 				}
 
 				NumObjectsInLastLine = NumObjectsInCurrentLine;
+
+				if((HAL_GetTick() - over_count_protect_counter) > OVER_COUNT_PROTECT_TIME)
+				{
+					over_count_protect_pices_per_period = 0;
+					over_count_protect_counter = HAL_GetTick();
+				}
 			}
 		}
 
@@ -2691,7 +2584,7 @@ void tft_show_message(uint8_t msg)
 					sprintf((char*)data_tx_buffer, "page%u.t4.txt=\"Clean Window\"", active_page);
 					break;
 
-				case 4 : // Dirty
+				case 4 : // Inventory
 					sprintf((char*)data_tx_buffer, "page%u.t4.txt=\"Inventory\"", active_page);
 					break;
 				case 5 : // Clear Msg Line
@@ -2957,7 +2850,17 @@ void StartScaner(void)
 	//COMP1->CFGR |= COMP_CFGRx_INMSEL_0;
 
 	dummy_scan_counter = INIT_CLEAR_TEST_SCAN_COUNTER_VALUE;
+	memset((uint8_t*)last_line, 0, sizeof(last_line));
+	memset((uint8_t*)clean_test_lines_buffer, 0, sizeof(clean_test_lines_buffer));
+
+#ifndef CLEAN_TEST_SERVICE_ENABLE
+	clean_test_scan_counter =0;
+#else
 	clean_test_scan_counter = INIT_CLEAR_TEST_SCAN_COUNTER_VALUE;
+#endif		// CLEAN_TEST_SERVICE_ENABLE
+
+	over_count_protect_counter = HAL_GetTick();
+	over_count_protect_pices_per_period = 0;
 
 	TIM17->CR1 |= TIM_CR1_CEN;
 	TIM17->CCER = TIM_CCER_CC1E;
@@ -2972,7 +2875,7 @@ void StartScaner(void)
 
 void StopScaner(void)
 {
-	xEventGroupClearBits( xEventGroup_StatusFlags, Flag_Scaner_State);
+	xEventGroupClearBits( xEventGroup_StatusFlags, Flag_Scaner_State | Flag_Activity_Detect);
 //	xEventGroupSetBits(xEventGroup_StatusFlags_2, Flag_2_Need_Stop_Scaner);
 
 	TIM3->CR1 &= ~TIM_CR1_CEN;
