@@ -1171,7 +1171,7 @@ void vTask_Display(void *pvParameters)
 				}
 
 				//------
-				if (!(xEventGroupGetBits(xEventGroup_StatusFlags) & ( Flag_Protect_State | Flag_Scaner_Dirty)))
+				if (!(xEventGroupGetBits(xEventGroup_StatusFlags) & (Flag_Protect_State | Flag_Scaner_Dirty)))
 				{
 					if (timer_counter_flashing_display) timer_counter_flashing_display--;
 
@@ -1272,7 +1272,7 @@ void vTask_Display(void *pvParameters)
 				}
 
 				//------
-				if ( (!(xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Protect_State)) /*&& (!(xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Idle_State))*/)
+				if ( (!(xEventGroupGetBits(xEventGroup_StatusFlags) & (Flag_Protect_State | Flag_Scaner_Dirty))) /*&& (!(xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Idle_State))*/)
 				{
 					if (timer_counter_flashing_display)
 					{
