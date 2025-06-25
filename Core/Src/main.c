@@ -1116,7 +1116,6 @@ void vTask_Display(void *pvParameters)
 				xEventGroupClearBits(xEventGroup_StatusFlags, Flag_Scaner_Dirty_Event);
 				tft_show_message(3); // Not Clear
 			}
-
 			else if (xEventGroupGetBits(xEventGroup_StatusFlags_2) & Flag_Idle_WakeUP_Event_Start)
 			{
 				xEventGroupClearBits(xEventGroup_StatusFlags_2, Flag_Idle_WakeUP_Event_Start);
@@ -1127,8 +1126,7 @@ void vTask_Display(void *pvParameters)
 				xEventGroupClearBits(xEventGroup_StatusFlags_2, Flag_Idle_WakeUP_Event_End);
 				tft_show_message(5); // Clear Msg Line
 			}
-
-			else if (xEventGroupGetBits(xEventGroup_StatusFlags_2) & Flag_2_Need_Mode_Event)
+			else if (xEventGroupGetBits(xEventGroup_StatusFlags_2) & Flag_2_Need_Mode_Event) // if ckick envent mode
 			{
 				xEventGroupClearBits(xEventGroup_StatusFlags_2, Flag_2_Need_Mode_Event);
 
@@ -1143,34 +1141,31 @@ void vTask_Display(void *pvParameters)
 					else tft_send_click(12, 0);
 				}
 
-				if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Idle_State)
-				{
-					tft_show_message(0);
-				}
+				if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Idle_State) tft_show_message(0);
 			}
 			else
 			{
+				// show num pices
 
 				tft_show_nun_pices(numObjects);
+
+				// show and play overcount if over count occurred
 
 				if (timer_over_count_signal_display)
 				{
 					timer_over_count_signal_display--;
-					if (!timer_over_count_signal_display)
-					{
-						tft_show_overcount(0);
-					}
+					if (!timer_over_count_signal_display) tft_show_overcount(0);
 				}
 
 				if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Over_Count_Display)
 				{
 					xEventGroupClearBits( xEventGroup_StatusFlags, Flag_Over_Count_Display);
-
 					if (!timer_over_count_signal_display) tft_show_overcount(1);
 					timer_over_count_signal_display = 5;
 				}
 
-				//------
+				// if container removed flash counter
+
 				if (!(xEventGroupGetBits(xEventGroup_StatusFlags) & (Flag_Protect_State | Flag_Scaner_Dirty)))
 				{
 					if (timer_counter_flashing_display) timer_counter_flashing_display--;
@@ -1179,25 +1174,12 @@ void vTask_Display(void *pvParameters)
 					{
 						if (!timer_counter_flashing_display)
 						{
-							if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Counter_Not_Visible)
-							{
-								tft_show_hide_counter(1);
-							}
-							else
-							{
-								tft_show_hide_counter(0);
-							}
-
+							if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Counter_Not_Visible) tft_show_hide_counter(1);
+							else tft_show_hide_counter(0);
 							timer_counter_flashing_display = 5;
 						}
 					}
-					else
-					{
-						if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Counter_Not_Visible)
-						{
-							tft_show_hide_counter(1);
-						}
-					}
+					else if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Counter_Not_Visible) tft_show_hide_counter(1);
 				}
 			}
 		}
@@ -1245,73 +1227,47 @@ void vTask_Display(void *pvParameters)
 			}
 			else
 			{
+				// show num pices and areas
 
 				tft_show_nun_pices(numObjects);
-
 				tft_show_area_pices(num_show_object_area);
+
+				// over count service
 
 				if (timer_over_count_signal_display)
 				{
 					timer_over_count_signal_display--;
-					if (!timer_over_count_signal_display)
-					{
-						tft_show_overcount(0);
-					}
+					if (!timer_over_count_signal_display) tft_show_overcount(0);
 				}
 
 				if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Over_Count_Display)
 				{
-					xEventGroupClearBits( xEventGroup_StatusFlags, Flag_Over_Count_Display);
-
-					if (!timer_over_count_signal_display)
-					{
-						tft_show_overcount(1);
-					}
-
+					xEventGroupClearBits(xEventGroup_StatusFlags, Flag_Over_Count_Display);
+					if (!timer_over_count_signal_display) tft_show_overcount(1);
 					timer_over_count_signal_display = 5;
 				}
 
-				//------
+				// if container removed flash display
+
 				if ( (!(xEventGroupGetBits(xEventGroup_StatusFlags) & (Flag_Protect_State | Flag_Scaner_Dirty))) /*&& (!(xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Idle_State))*/)
 				{
-					if (timer_counter_flashing_display)
-					{
-						timer_counter_flashing_display--;
-					}
+					if (timer_counter_flashing_display) timer_counter_flashing_display--;
 
 					if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Container_Removed)
 					{
 						if (!timer_counter_flashing_display)
 						{
-							if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Counter_Not_Visible)
-							{
-								tft_show_hide_counter(1);
-							}
-							else
-							{
-								tft_show_hide_counter(0);
-							}
-
+							if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Counter_Not_Visible) tft_show_hide_counter(1);
+							else tft_show_hide_counter(0);
 							timer_counter_flashing_display = 5;
 						}
 					}
-					else
-					{
-						if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Counter_Not_Visible)
-						{
-							tft_show_hide_counter(1);
-						}
-					}
+					else if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Counter_Not_Visible) tft_show_hide_counter(1);
 				}
 			}
 		}
 
 		vTaskDelay(100);
-
-	/*	tft_show_nun_pices(numObjects);
-		vTaskDelay(1000);*/
-
-
 	}
 
 }
@@ -1595,39 +1551,22 @@ void vTask_TouchScreen(void *pvParameters)
 		{
 			  if (uart_rx_buffer[0] == 0x65)
 			  {
-				  if (uart_rx_buffer[1] == 0x00)
-				  {
-					  service_page_0(uart_rx_buffer[2], uart_rx_buffer[3]);
-				  }
-				  else if (uart_rx_buffer[1] == 0x01)
-				  {
-					  service_page_1(uart_rx_buffer[2], uart_rx_buffer[3]);
-				  }
+				  if (uart_rx_buffer[1] == 0x00) service_page_0(uart_rx_buffer[2], uart_rx_buffer[3]);
+				  else if (uart_rx_buffer[1] == 0x01) service_page_1(uart_rx_buffer[2], uart_rx_buffer[3]);
 			  }
 		}
 		else if (uart_rx_buffer_pointer == 5)
 		{
 			  if (uart_rx_buffer[0] == 0x66)
 			  {
-				  if (uart_rx_buffer[1] == 0x00)
-				  {
-					  active_page = 0;
-				  }
-				  else if (uart_rx_buffer[1] == 0x01)
-				  {
-					  active_page = 1;
-				  }
-				  else if (uart_rx_buffer[1] == 0x02)
-				  {
-					  active_page = 2;
-				  }
+				  if (uart_rx_buffer[1] == 0x00) active_page = 0;
+				  else if (uart_rx_buffer[1] == 0x01) active_page = 1;
+				  else if (uart_rx_buffer[1] == 0x02) active_page = 2;
 			  }
 		}
 
 		uart_rx_buffer_pointer = 0;
-
 		xEventGroupClearBits(xEventGroup_StatusFlags, Flag_UART_RX_Buffer_Busy);
-
 	}
 }
 
@@ -1651,16 +1590,8 @@ void vTask_ContainerDetect(void *pvParameters)
 				  xEventGroupClearBits(xEventGroup_StatusFlags, Flag_Container_Removed);
 				  event_state = 1;
 
-				  if (!(xEventGroupGetBits(xEventGroup_StatusFlags_2) & Flag_2_Envent_Mode))
-				  {
-					  Clear_Counter();
-				  }
-
-				  if (xEventGroupGetBits(xEventGroup_StatusFlags) & (Flag_Protect_State | Flag_Scaner_Dirty))
-				  {
-					  Clear_Counter();
-				  }
-
+				  if (!(xEventGroupGetBits(xEventGroup_StatusFlags_2) & Flag_2_Envent_Mode)) Clear_Counter();
+				  if (xEventGroupGetBits(xEventGroup_StatusFlags) & (Flag_Protect_State | Flag_Scaner_Dirty)) Clear_Counter();
 				  xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Activity_Detect);
 			  }
 		  }
@@ -1674,11 +1605,7 @@ void vTask_ContainerDetect(void *pvParameters)
 		  {
 			  if(!event_state)
 			  {
-				  if(xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Idle_State)
-				  {
-					  xEventGroupSetBits(xEventGroup_StatusFlags_2,  Flag_Idle_WakeUP | Flag_Idle_WakeUP_Event_Start);
-				  }
-
+				  if(xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Idle_State) xEventGroupSetBits(xEventGroup_StatusFlags_2, Flag_Idle_WakeUP | Flag_Idle_WakeUP_Event_Start);
 
 				  xEventGroupSetBits(xEventGroup_StatusFlags, Flag_Container_Removed);
 				  StopScaner();
@@ -1686,10 +1613,7 @@ void vTask_ContainerDetect(void *pvParameters)
 				  xEventGroupSetBits(xEventGroup_StatusFlags_2, Flag_2_Need_Mode_Event);
 			  }
 		  }
-		  else
-		  {
-			  event_state = 0;
-		  }
+		  else event_state = 0;
 
 		  previous_state = 0;
 	  }
@@ -2284,6 +2208,8 @@ void vTask_Scanner(void *pvParameters)
 					if(over_count_protect_pices_per_period > OVER_COUNT_PROTECT)
 					{
 						StopScaner();
+
+						xEventGroupClearBits(xEventGroup_StatusFlags, Flag_Over_Count | Flag_Over_Count_Display | Flag_Activity_Detect);
 						xEventGroupSetBits(xEventGroup_StatusFlags, Flag_Scaner_Dirty | Flag_Scaner_Dirty_Event);
 						break;
 					}
@@ -2430,7 +2356,6 @@ void vTask_USB_Line_TX(void *pvParameters)
 		}
 
 		xQueueSend(xQueue_pLines_empty_usb, &p_line_usb, 0);
-
 	}
 }
 
@@ -2448,10 +2373,7 @@ void vTask_USART_Service (void *pvParameters)
 	{
 		xEventGroupWaitBits(xEventGroup_StatusFlags, Flag_USART_TX | Flag_USART_RX, pdFALSE, pdFALSE, portMAX_DELAY );
 
-		if(xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_USART_RX)
-		{
-			xEventGroupClearBits(xEventGroup_StatusFlags, Flag_USART_RX);
-		}
+		if(xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_USART_RX) xEventGroupClearBits(xEventGroup_StatusFlags, Flag_USART_RX);
 
 		if(xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_USART_TX)
 		{
@@ -2468,35 +2390,15 @@ void vTask_USART_Service (void *pvParameters)
 					num_data_tx--;
 					num_data_send++;
 
-					while(!(USART1->ISR & USART_ISR_TC))
-					{
-						vTaskDelay(1);
-					}
-
+					while(!(USART1->ISR & USART_ISR_TC)) vTaskDelay(1);
 					USART1->ICR |= USART_ICR_TCCF;
 				}
-
-
 			}
-
-			/*while(!(USART1->ISR & USART_ISR_TC))
-			{
-				vTaskDelay(1);
-			}*/
-
-			//xEventGroupSetBits(xEventGroup_StatusFlags, Flag_UART_TX_Ready);
 
 			xEventGroupClearBits(xEventGroup_StatusFlags, Flag_USART_TX);
 		}
 	}
 }
-
-/*
- *
- */
-
-
-
 
 /*
  *
@@ -2508,10 +2410,8 @@ void tft_show_message(uint8_t msg)
 
 	if (msg < 4)
 	{
-		while ((xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_USART_TX) && ((HAL_GetTick() - protect_counter) < 1000))
-		{
-			vTaskDelay(10);
-		}
+		protect_counter = HAL_GetTick();
+		while ((xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_USART_TX) && ((HAL_GetTick() - protect_counter) < 1000)) vTaskDelay(10);
 
 		if (!(xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_USART_TX))
 		{
@@ -2543,11 +2443,7 @@ void tft_show_message(uint8_t msg)
 	if (msg == 6)
 	{
 		protect_counter = HAL_GetTick();
-
-		while ((xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_USART_TX) && ((HAL_GetTick() - protect_counter) < 1000))
-		{
-			vTaskDelay(10);
-		}
+		while ((xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_USART_TX) && ((HAL_GetTick() - protect_counter) < 1000)) vTaskDelay(10);
 
 		sprintf((char*)data_tx_buffer, "page%u.wav1.en=1", active_page);
 		num_data_tx = strlen((char*)data_tx_buffer);
@@ -2561,11 +2457,7 @@ void tft_show_message(uint8_t msg)
 	if (msg < 7)
 	{
 		protect_counter = HAL_GetTick();
-
-		while ((xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_USART_TX) && ((HAL_GetTick() - protect_counter) < 1000))
-		{
-			vTaskDelay(10);
-		}
+		while ((xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_USART_TX) && ((HAL_GetTick() - protect_counter) < 1000)) vTaskDelay(10);
 
 		if (!(xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_USART_TX))
 		{
@@ -2875,7 +2767,7 @@ void StartScaner(void)
 
 void StopScaner(void)
 {
-	xEventGroupClearBits( xEventGroup_StatusFlags, Flag_Scaner_State | Flag_Activity_Detect);
+	xEventGroupClearBits( xEventGroup_StatusFlags, Flag_Scaner_State);
 //	xEventGroupSetBits(xEventGroup_StatusFlags_2, Flag_2_Need_Stop_Scaner);
 
 	TIM3->CR1 &= ~TIM_CR1_CEN;
