@@ -244,6 +244,8 @@ const EventBits_t Flag_Protect_State =				0x00100000;
 const EventBits_t Flag_Protect_Event =				0x00200000;
 const EventBits_t Flag_Scaner_Dirty			 =		0x00400000;
 const EventBits_t Flag_Scaner_Dirty_Event	 =		0x00800000;
+const EventBits_t Flag_Scaner_OverSpeed		 =		0x01000000;
+const EventBits_t Flag_Scaner_OverSpeed_Event	 =	0x02000000;
 
 EventGroupHandle_t xEventGroup_StatusFlags_2;
 
@@ -315,6 +317,12 @@ uint32_t over_count_protect_pices_per_period = 0;
 
 #define OVER_COUNT_PROTECT 20
 #define OVER_COUNT_PROTECT_TIME 200
+
+uint32_t over_speed_protect_counter = 0;
+uint32_t over_speed_protect_pices_per_period = 0;
+
+#define OVER_SPEED_PROTECT 10
+#define OVER_SPEED_PROTECT_TIME 400
 
 /* USER CODE END PFP */
 
@@ -998,7 +1006,7 @@ void vTask_Main(void *pvParameters)
 
 		if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Activity_Detect)
 		{
-			xEventGroupClearBits( xEventGroup_StatusFlags, Flag_Activity_Detect | Flag_Idle_State | Flag_Protect_State | Flag_Scaner_Dirty);
+			xEventGroupClearBits( xEventGroup_StatusFlags, Flag_Activity_Detect | Flag_Idle_State | Flag_Protect_State | Flag_Scaner_Dirty /*| Flag_Scaner_OverSpeed*/);
 
 			previousTickCount = xTaskGetTickCount();
 
@@ -1023,7 +1031,7 @@ void vTask_Main(void *pvParameters)
 				xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Scaner_State | Flag_Scaner_Event);
 			}
 		}
-		else if (!(xEventGroupGetBits(xEventGroup_StatusFlags) & (Flag_Protect_State | Flag_Scaner_Dirty)))
+		else if (!(xEventGroupGetBits(xEventGroup_StatusFlags) & (Flag_Protect_State | Flag_Scaner_Dirty /*| Flag_Scaner_OverSpeed*/)))
 		{
 			if ((xTaskGetTickCount() - previousTickCount) >= 1000)
 			{
@@ -1116,6 +1124,11 @@ void vTask_Display(void *pvParameters)
 				xEventGroupClearBits(xEventGroup_StatusFlags, Flag_Scaner_Dirty_Event);
 				tft_show_message(3); // Not Clear
 			}
+			/*else if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Scaner_OverSpeed_Event)
+			{
+				xEventGroupClearBits(xEventGroup_StatusFlags, Flag_Scaner_OverSpeed_Event);
+				tft_show_message(15); // OverSpeed
+			}*/
 			else if (xEventGroupGetBits(xEventGroup_StatusFlags_2) & Flag_Idle_WakeUP_Event_Start)
 			{
 				xEventGroupClearBits(xEventGroup_StatusFlags_2, Flag_Idle_WakeUP_Event_Start);
@@ -1166,7 +1179,7 @@ void vTask_Display(void *pvParameters)
 
 				// if container removed flash counter
 
-				if (!(xEventGroupGetBits(xEventGroup_StatusFlags) & (Flag_Protect_State | Flag_Scaner_Dirty)))
+				if (!(xEventGroupGetBits(xEventGroup_StatusFlags) & (Flag_Protect_State | Flag_Scaner_Dirty/* | Flag_Scaner_OverSpeed*/)))
 				{
 					if (timer_counter_flashing_display) timer_counter_flashing_display--;
 
@@ -1591,7 +1604,7 @@ void vTask_ContainerDetect(void *pvParameters)
 				  event_state = 1;
 
 				  if (!(xEventGroupGetBits(xEventGroup_StatusFlags_2) & Flag_2_Envent_Mode)) Clear_Counter();
-				  if (xEventGroupGetBits(xEventGroup_StatusFlags) & (Flag_Protect_State | Flag_Scaner_Dirty)) Clear_Counter();
+				  if (xEventGroupGetBits(xEventGroup_StatusFlags) & (Flag_Protect_State | Flag_Scaner_Dirty | Flag_Scaner_OverSpeed)) Clear_Counter();
 				  xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Activity_Detect);
 			  }
 		  }
@@ -2188,6 +2201,9 @@ void vTask_Scanner(void *pvParameters)
 						over_count_protect_pices_per_period++;
 						if(over_count_protect_pices_per_period > OVER_COUNT_PROTECT) break;
 
+						over_speed_protect_pices_per_period++;
+						if(over_speed_protect_pices_per_period > OVER_SPEED_PROTECT) break;
+
 						xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Activity_Detect);
 
 						if (numObjects == NUM_PICES_FOR_EXECUTE_MIDLE)
@@ -2208,11 +2224,18 @@ void vTask_Scanner(void *pvParameters)
 					if(over_count_protect_pices_per_period > OVER_COUNT_PROTECT)
 					{
 						StopScaner();
-
 						xEventGroupClearBits(xEventGroup_StatusFlags, Flag_Over_Count | Flag_Over_Count_Display | Flag_Activity_Detect);
 						xEventGroupSetBits(xEventGroup_StatusFlags, Flag_Scaner_Dirty | Flag_Scaner_Dirty_Event);
 						break;
 					}
+
+					/*if(over_speed_protect_pices_per_period > OVER_SPEED_PROTECT)
+					{
+						StopScaner();
+						xEventGroupClearBits(xEventGroup_StatusFlags, Flag_Over_Count | Flag_Over_Count_Display | Flag_Activity_Detect);
+						xEventGroupSetBits(xEventGroup_StatusFlags, Flag_Scaner_OverSpeed | Flag_Scaner_OverSpeed_Event);
+						break;
+					}*/
 
 //#ifdef OVER_RATE_ENABLE
 					if ((numObjects_temp != numObjects) && (midle_area <= div_12) && numObjects > NUM_PICES_FOR_EXECUTE_MIDLE)
@@ -2256,6 +2279,12 @@ void vTask_Scanner(void *pvParameters)
 				{
 					over_count_protect_pices_per_period = 0;
 					over_count_protect_counter = HAL_GetTick();
+				}
+
+				if((HAL_GetTick() - over_speed_protect_counter) > OVER_SPEED_PROTECT_TIME)
+				{
+					over_speed_protect_pices_per_period = 0;
+					over_speed_protect_counter = HAL_GetTick();
 				}
 			}
 		}
@@ -2408,7 +2437,7 @@ void tft_show_message(uint8_t msg)
 {
 	uint32_t protect_counter = HAL_GetTick();
 
-	if (msg < 4)
+	if((msg < 5) || (msg == 15))
 	{
 		protect_counter = HAL_GetTick();
 		while ((xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_USART_TX) && ((HAL_GetTick() - protect_counter) < 1000)) vTaskDelay(10);
@@ -2427,6 +2456,9 @@ void tft_show_message(uint8_t msg)
 					sprintf((char*)data_tx_buffer, "page%u.n0.pco=65520", active_page);
 					break;
 				case 3 : // Dirty
+					sprintf((char*)data_tx_buffer, "page%u.n0.pco=65520", active_page); //63488
+					break;
+				case 15 : // OverSpeed
 					sprintf((char*)data_tx_buffer, "page%u.n0.pco=65520", active_page); //63488
 					break;
 			}
@@ -2454,7 +2486,7 @@ void tft_show_message(uint8_t msg)
 		xEventGroupSetBits(xEventGroup_StatusFlags, Flag_USART_TX);
 	}
 
-	if (msg < 7)
+	if ((msg < 7) || (msg == 15))
 	{
 		protect_counter = HAL_GetTick();
 		while ((xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_USART_TX) && ((HAL_GetTick() - protect_counter) < 1000)) vTaskDelay(10);
@@ -2484,6 +2516,9 @@ void tft_show_message(uint8_t msg)
 					break;
 				case 6 : // Check the tray
 					sprintf((char*)data_tx_buffer, "page%u.t4.txt=\"Check The Tray\"", active_page);
+					break;
+				case 15 : // OverSpeed
+					sprintf((char*)data_tx_buffer, "page%u.t4.txt=\"OverSpeed\"", active_page);
 					break;
 			}
 
@@ -2529,48 +2564,51 @@ void tft_show_overcount(uint16_t state)
 		xEventGroupSetBits(xEventGroup_StatusFlags, Flag_USART_TX);
 	}
 
-	protect_counter = HAL_GetTick();
-
-	while ((xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_USART_TX) && ((HAL_GetTick() - protect_counter) < 1000))
+	if (!(xEventGroupGetBits(xEventGroup_StatusFlags) & (Flag_Scaner_Dirty | Flag_Scaner_OverSpeed)))
 	{
-		vTaskDelay(10);
-	}
+		protect_counter = HAL_GetTick();
 
-	if (!(xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_USART_TX))
-	{
-		if(state)
+		while ((xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_USART_TX) && ((HAL_GetTick() - protect_counter) < 1000))
 		{
-			sprintf((char*)data_tx_buffer, "page%u.t4.txt=\"SLOWLY \"", active_page);
+			vTaskDelay(10);
 		}
-		else
+
+		if (!(xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_USART_TX))
 		{
-			sprintf((char*)data_tx_buffer, "page%u.t4.txt=\" \"", active_page);
-		}
-		num_data_tx = strlen((char*)data_tx_buffer);
-		data_tx_buffer[num_data_tx++] = 0xff;
-		data_tx_buffer[num_data_tx++] = 0xff;
-		data_tx_buffer[num_data_tx++] = 0xff;
-		xEventGroupSetBits(xEventGroup_StatusFlags, Flag_USART_TX);
-	}
-
-
-	protect_counter = HAL_GetTick();
-
-	while ((xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_USART_TX) && ((HAL_GetTick() - protect_counter) < 1000))
-	{
-		vTaskDelay(10);
-	}
-
-	if (!(xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_USART_TX))
-	{
-		if(state)
-		{
-			sprintf((char*)data_tx_buffer, "page%u.wav0.en=1", active_page);
+			if(state)
+			{
+				sprintf((char*)data_tx_buffer, "page%u.t4.txt=\"SLOWLY \"", active_page);
+			}
+			else
+			{
+				sprintf((char*)data_tx_buffer, "page%u.t4.txt=\" \"", active_page);
+			}
 			num_data_tx = strlen((char*)data_tx_buffer);
 			data_tx_buffer[num_data_tx++] = 0xff;
 			data_tx_buffer[num_data_tx++] = 0xff;
 			data_tx_buffer[num_data_tx++] = 0xff;
 			xEventGroupSetBits(xEventGroup_StatusFlags, Flag_USART_TX);
+		}
+
+
+		protect_counter = HAL_GetTick();
+
+		while ((xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_USART_TX) && ((HAL_GetTick() - protect_counter) < 1000))
+		{
+			vTaskDelay(10);
+		}
+
+		if (!(xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_USART_TX))
+		{
+			if(state)
+			{
+				sprintf((char*)data_tx_buffer, "page%u.wav0.en=1", active_page);
+				num_data_tx = strlen((char*)data_tx_buffer);
+				data_tx_buffer[num_data_tx++] = 0xff;
+				data_tx_buffer[num_data_tx++] = 0xff;
+				data_tx_buffer[num_data_tx++] = 0xff;
+				xEventGroupSetBits(xEventGroup_StatusFlags, Flag_USART_TX);
+			}
 		}
 	}
 }
@@ -2753,6 +2791,9 @@ void StartScaner(void)
 
 	over_count_protect_counter = HAL_GetTick();
 	over_count_protect_pices_per_period = 0;
+
+	over_speed_protect_counter = HAL_GetTick();
+	over_speed_protect_pices_per_period = 0;
 
 	TIM17->CR1 |= TIM_CR1_CEN;
 	TIM17->CCER = TIM_CCER_CC1E;
