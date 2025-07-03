@@ -324,7 +324,7 @@ uint32_t over_count_protect_pices_per_period = 0;
 uint32_t over_speed_protect_counter = 0;
 uint32_t over_speed_protect_pices_per_period = 0;
 
-#define OVER_SPEED_PROTECT 10
+#define OVER_SPEED_PROTECT 20
 #define OVER_SPEED_PROTECT_TIME 400
 
 /* USER CODE END PFP */
@@ -1125,11 +1125,11 @@ void vTask_Display(void *pvParameters)
 				xEventGroupClearBits(xEventGroup_StatusFlags, Flag_Scaner_Dirty_Event);
 				tft_show_message(3); // Not Clear
 			}
-			/*else if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Scaner_OverSpeed_Event)
+			else if (xEventGroupGetBits(xEventGroup_StatusFlags) & Flag_Scaner_OverSpeed_Event)
 			{
 				xEventGroupClearBits(xEventGroup_StatusFlags, Flag_Scaner_OverSpeed_Event);
 				tft_show_message(15); // OverSpeed
-			}*/
+			}
 			else if (xEventGroupGetBits(xEventGroup_StatusFlags_2) & Flag_2_Idle_WakeUP_Event_Start)
 			{
 				xEventGroupClearBits(xEventGroup_StatusFlags_2, Flag_2_Idle_WakeUP_Event_Start);
@@ -1596,7 +1596,7 @@ void vTask_ContainerDetect(void *pvParameters)
 				  event_state = 1;
 
 				  if (!(xEventGroupGetBits(xEventGroup_StatusFlags_2) & Flag_2_Envent_Mode)) Clear_Counter();
-				  if (xEventGroupGetBits(xEventGroup_StatusFlags) & (Flag_Protect_State | Flag_Scaner_Dirty | Flag_Scaner_OverSpeed)) Clear_Counter();
+				  //if (xEventGroupGetBits(xEventGroup_StatusFlags) & (Flag_Protect_State | Flag_Scaner_Dirty | Flag_Scaner_OverSpeed)) Clear_Counter();
 				  xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Activity_Detect);
 			  }
 		  }
@@ -1614,6 +1614,7 @@ void vTask_ContainerDetect(void *pvParameters)
 
 				  xEventGroupSetBits(xEventGroup_StatusFlags, Flag_Container_Removed);
 				  StopScaner();
+				  if (xEventGroupGetBits(xEventGroup_StatusFlags) & (Flag_Protect_State | Flag_Scaner_Dirty | Flag_Scaner_OverSpeed)) Clear_Counter();
 				  event_state = 1;
 				  xEventGroupSetBits(xEventGroup_StatusFlags_2, Flag_2_Need_Mode_Event);
 			  }
@@ -2193,9 +2194,9 @@ void vTask_Scanner(void *pvParameters)
 						over_count_protect_pices_per_period++;
 						if(over_count_protect_pices_per_period > OVER_COUNT_PROTECT) break;
 
-						/*over_speed_protect_pices_per_period++;
+						over_speed_protect_pices_per_period++;
 						if(over_speed_protect_pices_per_period > OVER_SPEED_PROTECT) break;
-*/
+
 						xEventGroupSetBits( xEventGroup_StatusFlags, Flag_Activity_Detect);
 
 						if (numObjects == NUM_PICES_FOR_EXECUTE_MIDLE)
